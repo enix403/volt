@@ -70,23 +70,32 @@ static void _consume(TokenType type, const char* msg) {
 static inline void emit_byte(byte_t byte) {
     chunk_write(current_chunk(), byte);
 }
+static inline void emit_bytes(byte_t byte1, byte_t byte2) {
+    emit_byte(byte1);
+    emit_byte(byte2);
+}
 
 static void emit_const(Value val) {
     int constant_loc = chunk_addconst(current_chunk(), val);
     if (constant_loc >= UINT8_MAX) {
         error_token(&parser.previous, "Too many constants in one chunk");
     }
-    emit_byte(OP_LOADCONST);
-    emit_byte((byte_t)constant_loc);
+    emit_bytes(OP_LOADCONST, (byte_t)constant_loc);
 }
 
 /* Pratt's Parser */
 typedef enum {
     PREC_NONE,
-    PREC_TERM,
-    PREC_FACTOR,
-    PREC_UNARY,
-    PREC_PRIMARY,
+    PREC_ASSIGNMENT,  // =
+    PREC_OR,          // or
+    PREC_AND,         // and
+    PREC_EQUALITY,    // == !=
+    PREC_COMPARISON,  // < > <= >=
+    PREC_TERM,        // + -
+    PREC_FACTOR,      // * /
+    PREC_UNARY,       // ! -
+    PREC_CALL,        // . ()
+    PREC_PRIMARY
 } Precedence;
 
 typedef void (*ParseFn)(bool can_assign);
@@ -104,7 +113,7 @@ static ParseRule* get_rule(TokenType token_type);
 
 /* Actual compilation logic */
 static inline void cmpl_expression(bool can_assign) {
-    parse_precedence(PREC_TERM);
+    parse_precedence(PREC_ASSIGNMENT);
 }
 
 static void cmpl_number(bool can_assign) {
@@ -133,6 +142,14 @@ static void cmpl_binary(bool can_assign) {
         case TOKEN_MINUS:   emit_byte(OP_SUBTRACT); break;
         case TOKEN_STAR:    emit_byte(OP_MULTIPLY); break;
         case TOKEN_SLASH:   emit_byte(OP_DIVIDE);   break;
+        
+        case TOKEN_EQUAL_EQUAL: emit_byte(OP_LOGIC_EQUAL);      break;
+        case TOKEN_GREATER:     emit_byte(OP_LOGIC_GREATER);    break;
+        case TOKEN_LESS:        emit_byte(OP_LOGIC_LESS);       break;
+
+        case TOKEN_BANG_EQUAL:      emit_bytes(OP_LOGIC_EQUAL, OP_LOGIC_NOT);   break;
+        case TOKEN_GREATER_EQUAL:   emit_bytes(OP_LOGIC_LESS, OP_LOGIC_NOT);    break;
+        case TOKEN_LESS_EQUAL:      emit_bytes(OP_LOGIC_GREATER, OP_LOGIC_NOT); break;
         default: break; // Unreachable
     }
 }
@@ -163,13 +180,13 @@ ParseRule rules[] = {
     [TOKEN_SLASH]           = {NULL,            cmpl_binary,    PREC_FACTOR},
     [TOKEN_STAR]            = {NULL,            cmpl_binary,    PREC_FACTOR},
     [TOKEN_BANG]            = {cmpl_unary,      NULL,           PREC_NONE},
-    [TOKEN_BANG_EQUAL]      = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_BANG_EQUAL]      = {NULL,            cmpl_binary,    PREC_EQUALITY},
     [TOKEN_EQUAL]           = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_EQUAL_EQUAL]     = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_GREATER]         = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_GREATER_EQUAL]   = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_LESS]            = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_LESS_EQUAL]      = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_EQUAL_EQUAL]     = {NULL,            cmpl_binary,    PREC_EQUALITY},
+    [TOKEN_GREATER]         = {NULL,            cmpl_binary,    PREC_COMPARISON},
+    [TOKEN_GREATER_EQUAL]   = {NULL,            cmpl_binary,    PREC_COMPARISON},
+    [TOKEN_LESS]            = {NULL,            cmpl_binary,    PREC_COMPARISON},
+    [TOKEN_LESS_EQUAL]      = {NULL,            cmpl_binary,    PREC_COMPARISON},
     [TOKEN_IDENTIFIER]      = {NULL,            NULL,           PREC_NONE},
     [TOKEN_STRING]          = {NULL,            NULL,           PREC_NONE},
     [TOKEN_NUMBER]          = {cmpl_number,     NULL,           PREC_NONE},

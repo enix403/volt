@@ -42,3 +42,4 @@ void valarray_write(ValueArray* valarr, Value val);
 void valarray_free(ValueArray* valarr);
 
 void print_val(Value val);
+bool values_equal(Value v1, Value v2);

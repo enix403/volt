@@ -43,3 +43,17 @@ void print_val(Value val) {
             break;
     }
 }
+
+
+bool values_equal(Value v1, Value v2) {
+    if (v1.type != v2.type)
+        return false;
+    
+    switch (v1.type) {
+        case VAL_BOOL:      return VAL_AS_BOOL(v1) == VAL_AS_BOOL(v2);
+        case VAL_NUMBER:    return VAL_AS_NUM(v1) == VAL_AS_NUM(v2);
+        case VAL_NIL:       return true;
+        default: return false; // Unreachable
+    }
+    return false;
+}

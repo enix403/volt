@@ -111,6 +111,15 @@ static InterpretResult run_machine() {
 
             case OP_LOGIC_NOT:  vm_pushstack(MK_VAL_BOOL(is_falsey(vm_popstack()))); break;
 
+            case OP_LOGIC_EQUAL: {
+                Value a = vm_popstack();
+                Value b = vm_popstack();
+                vm_pushstack(MK_VAL_BOOL(values_equal(a, b)));
+                break;
+            }
+            case OP_LOGIC_GREATER:  { BINARY_OPERATION(MK_VAL_BOOL, >); break; }
+            case OP_LOGIC_LESS:     { BINARY_OPERATION(MK_VAL_BOOL, <); break; }
+
             default:
                 break;
         }

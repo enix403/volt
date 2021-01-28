@@ -57,6 +57,10 @@ int disassemble_instruction(Chunk* cnk, int offset) {
         case OP_LOGIC_NOT:  return simple_instruction("OP_LOGIC_NOT", offset);
         case OP_LOGIC_AND:  return simple_instruction("OP_LOGIC_AND", offset);
         case OP_LOGIC_OR:   return simple_instruction("OP_LOGIC_OR", offset);
+
+        case OP_LOGIC_EQUAL:    return simple_instruction("OP_LOGIC_EQUAL", offset);
+        case OP_LOGIC_GREATER:  return simple_instruction("OP_LOGIC_GREATER", offset);
+        case OP_LOGIC_LESS:     return simple_instruction("OP_LOGIC_LESS", offset);
         
         case OP_BIT_NOT:    return simple_instruction("OP_BIT_NOT", offset);
         case OP_BIT_AND:    return simple_instruction("OP_BIT_AND", offset);

@@ -24,6 +24,10 @@ typedef enum {
     OP_LOGIC_AND,
     OP_LOGIC_OR,
 
+    OP_LOGIC_EQUAL, // ==
+    OP_LOGIC_GREATER, // >
+    OP_LOGIC_LESS, // <
+
     // bitwise operators
     OP_BIT_NOT,
     OP_BIT_AND,
