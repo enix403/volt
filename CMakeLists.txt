@@ -14,9 +14,11 @@ add_executable(
 
     "volt/main.c"
     "volt/mem.c"
+    "volt/vm.c"
+    "volt/hash_table.c"
     "volt/code/chunk.c"
     "volt/code/value.c"
-    "volt/vm.c"
+    "volt/code/object.c"
     "volt/debugging/disassembly.c"
     "volt/scanning/scanner.c"
     "volt/compiling/compiler.c"

@@ -2,6 +2,8 @@
 
 #include "code/chunk.h"
 #include "code/value.h"
+#include "code/object.h"
+#include "hash_table.h"
 
 #define VM_STACK_MAX 256
 
@@ -17,7 +19,12 @@ typedef struct {
     // it helps to detect if stack is empty by just comapring if it points
     // to the zero'th element
     Value* stack_top;
+
+    Obj* objects;
+    HashTable interned_strings;
 } VM;
+
+extern VM vm;
 
 typedef enum {
     INTERPRET_OK,
@@ -28,9 +35,9 @@ typedef enum {
 void vm_init();
 void vm_free();
 
-void vm_pushstack(Value val);
-Value vm_popstack();
-Value vm_peekstack();
+// void vm_pushstack(Value val);
+// Value vm_popstack();
+// Value vm_peekstack();
 
 InterpretResult vm_execsource(const char* source);
 InterpretResult vm_execchunk(Chunk* cnk);

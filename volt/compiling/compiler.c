@@ -6,6 +6,7 @@
 #include "scanning/scanner.h"
 #include "code/opcodes.h"
 #include "code/value.h"
+#include "code/object.h"
 #include "bool.h"
 
 #include "debugging/switches.h"
@@ -166,7 +167,15 @@ static void cmpl_literal(bool can_assign) {
     }
 }
 
+static void cmpl_string(bool can_assign) {
+    emit_const(MK_VAL_OBJ(copy_string( // skip the start and end quotes
+        parser.previous.start + 1, 
+        parser.previous.length - 2
+    )));
+}
+
 /* Precedence and rule table */
+// clang-format off
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]      = {cmpl_grouping,   NULL,           PREC_NONE},
     [TOKEN_RIGHT_PAREN]     = {NULL,            NULL,           PREC_NONE},
@@ -188,7 +197,7 @@ ParseRule rules[] = {
     [TOKEN_LESS]            = {NULL,            cmpl_binary,    PREC_COMPARISON},
     [TOKEN_LESS_EQUAL]      = {NULL,            cmpl_binary,    PREC_COMPARISON},
     [TOKEN_IDENTIFIER]      = {NULL,            NULL,           PREC_NONE},
-    [TOKEN_STRING]          = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_STRING]          = {cmpl_string,     NULL,           PREC_NONE},
     [TOKEN_NUMBER]          = {cmpl_number,     NULL,           PREC_NONE},
     [TOKEN_AND]             = {NULL,            NULL,           PREC_NONE},
     [TOKEN_CLASS]           = {NULL,            NULL,           PREC_NONE},
@@ -209,6 +218,8 @@ ParseRule rules[] = {
     [TOKEN_ERROR]           = {NULL,            NULL,           PREC_NONE},
     [TOKEN_EOF]             = {NULL,            NULL,           PREC_NONE},
 };
+// clang-format on
+
 
 static ParseRule* get_rule(TokenType token_type) {
     return &rules[token_type];
@@ -247,7 +258,9 @@ bool compile(const char* source, Chunk* result_cnk) {
 
     _compiling_chunk = NULL;
 #ifdef DEBUG_SHOW_COMPILED_CODE
-    disassemble_chunk(result_cnk, "COMPILED CODE");
+    if (!parser.had_error) {
+        disassemble_chunk(result_cnk, "COMPILED CODE");
+    }
 #endif
 
     return !parser.had_error;

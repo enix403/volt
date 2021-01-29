@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "code/object.h"
 
 // All memory handling must be done here to pass through logging
 void* reallocate(void* buffer, int old_size, int new_size) {
@@ -16,4 +17,25 @@ void* reallocate(void* buffer, int old_size, int new_size) {
         exit(1);
     }
     return result;
+}
+
+static void free_object(Obj* object) {
+    switch (object->type) {
+        case OBJ_STRING: {
+            ObjString* string_obj = (ObjString*) object;
+            FREE_ARRAY(char, string_obj->chars, string_obj->length + 1); // include the null terminator
+            FREE(ObjString, string_obj);
+            break;
+        }
+    }
+}
+
+// takes a linked list of objects and frees them
+void free_objects(Obj* list_start) {
+    Obj* object = list_start;
+    while (object != NULL) {
+        Obj* next = object->next;
+        free_object(object);
+        object = next;
+    }
 }

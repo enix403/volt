@@ -20,7 +20,7 @@ void chunk_write(Chunk *cnk, byte_t byte) {
     cnk->count++;
 }
 void chunk_free(Chunk *cnk) {
-    FREE_ARRAY(cnk->code);
+    FREE_ARRAY(byte_t, cnk->code, cnk->count);
     valarray_free(&cnk->constants);
     chunk_init(cnk);
 }
