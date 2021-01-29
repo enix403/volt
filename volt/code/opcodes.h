@@ -10,6 +10,8 @@ typedef enum {
     // control flow and statments
     OP_PRINT,
     OP_DEFINE_GLOBAL,
+    OP_GET_GLOBAL,
+    OP_SET_GLOBAL,
 
     // instructions that put constants on the stack
     OP_NIL,

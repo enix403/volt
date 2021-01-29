@@ -5,19 +5,22 @@
 #include "code/value.h"
 
 // pretty prints an instruction that takes no operand
-static int simple_instruction(const char* name, int offset) {
+static int simple_instruction(const char* name, int offset)
+{
     printf("%s\n", name);
     return offset + 1;
 }
 
 // instruction that takes one operand
-static int binary_instruction(const char* name, int offset, Chunk* cnk) {
+static int binary_instruction(const char* name, int offset, Chunk* cnk)
+{
     printf("%-16s %4d\n ", name, cnk->code[offset + 1]);
     return offset + 2;
 }
 
 // pretty prints an instruction that takes index of a constant as an operand
-static int const_instruction(const char* name, int offset, Chunk* cnk) {
+static int const_instruction(const char* name, int offset, Chunk* cnk)
+{
     byte_t constant_loc = cnk->code[offset + 1]; // the next byte
     printf("%-16s %4d '", name, constant_loc); // print the index
     print_val(cnk->constants.values[constant_loc]); // print the actual value
@@ -25,7 +28,8 @@ static int const_instruction(const char* name, int offset, Chunk* cnk) {
     return offset + 2;
 }
 
-void disassemble_chunk(Chunk* cnk, const char* chunk_name) {
+void disassemble_chunk(Chunk* cnk, const char* chunk_name)
+{
     printf("==== %s ====\n", chunk_name);
     for (int offset = 0; offset < cnk->count;) {
         offset = disassemble_instruction(cnk, offset);
@@ -33,14 +37,16 @@ void disassemble_chunk(Chunk* cnk, const char* chunk_name) {
     printf("/====/ END CHUNK: %s /====/\n\n", chunk_name);
 }
 
-
-int disassemble_instruction(Chunk* cnk, int offset) {
+int disassemble_instruction(Chunk* cnk, int offset)
+{
     printf("%04d ", offset);
     byte_t instruction = cnk->code[offset];
     switch (instruction) {
-
+    // clang-format off
         case OP_LOADCONST:      return const_instruction("OP_LOADCONST", offset, cnk);
         case OP_DEFINE_GLOBAL:  return const_instruction("OP_DEFINE_GLOBAL", offset, cnk);
+        case OP_GET_GLOBAL:     return const_instruction("OP_GET_GLOBAL", offset, cnk);
+        case OP_SET_GLOBAL:     return const_instruction("OP_SET_GLOBAL", offset, cnk);
 
         case OP_POPN:       return binary_instruction("OP_POPN", offset, cnk);
         case OP_RETURN:     return simple_instruction("OP_RETURN", offset);
@@ -72,5 +78,7 @@ int disassemble_instruction(Chunk* cnk, int offset) {
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;
+
+        // clang-format on
     }
 }

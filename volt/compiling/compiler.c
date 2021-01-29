@@ -29,7 +29,7 @@ static inline Chunk* current_chunk() { return _compiling_chunk; }
 static void error_token(Token* token, const char* msg) {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
-    fprintf(stderr, "[line %d] Syntax error ", token->line);
+    fprintf(stderr, "[line %d] Syntax error", token->line);
 
     if (token->type == TOKEN_EOF) {
         fprintf(stderr, " at end");
@@ -102,6 +102,10 @@ static inline void emit_const(Value val) {
     emit_bytes(OP_LOADCONST, constant_loc);
 }
 
+static inline byte_t store_identifier_constant(Token* name) {
+    return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
+}
+
 /* Pratt's Parser */
 typedef enum {
     PREC_NONE,
@@ -133,8 +137,9 @@ static ParseRule* get_rule(TokenType token_type);
 /* Actual compilation logic */
 
 
+
 #if 1 /* ==========EXPRESSIONS============= */
-static inline void cmpl_expression(bool can_assign) {
+static inline void cmpl_expression() {
     parse_precedence(PREC_ASSIGNMENT);
 }
 
@@ -176,7 +181,7 @@ static void cmpl_binary(bool can_assign) {
     }
 }
 static void cmpl_grouping(bool can_assign) {
-    cmpl_expression(can_assign);
+    cmpl_expression();
     consume(TOKEN_RIGHT_PAREN, "Expected closing ')'");
 }
 static void cmpl_literal(bool can_assign) {
@@ -194,6 +199,23 @@ static void cmpl_string(bool can_assign) {
         parser.previous.length - 2
     )));
 }
+
+static inline void named_variable(Token* name, bool can_assign) {
+    byte_t varloc = store_identifier_constant(name);
+
+    if (can_assign && match(TOKEN_EQUAL)) {
+        cmpl_expression();
+        emit_bytes(OP_SET_GLOBAL, varloc);
+    }
+    else {
+        emit_bytes(OP_GET_GLOBAL, varloc);
+    }
+}
+
+static void cmpl_variable(bool can_assign) {
+    return named_variable(&parser.previous, can_assign);
+}
+
 #endif
 
 #if 1 /* ==========STATEMENTS============= */
@@ -202,10 +224,6 @@ static void cmpl_statment();
 static void cmpl_declaration();
 
 static inline void consume_semicolon() { consume(TOKEN_SEMICOLON, "Expected \";\" after statement."); }
-
-static inline byte_t store_identifier_constant(Token* name) {
-    return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
-}
 
 // returns the locations of constant that points to the string of variable name
 static byte_t parse_variable(const char* error_msg)
@@ -216,7 +234,7 @@ static byte_t parse_variable(const char* error_msg)
 
 static inline void cmpl_print_stmt()
 {
-    cmpl_expression(false);
+    cmpl_expression();
     consume_semicolon();
     emit_byte(OP_PRINT);
 }
@@ -228,7 +246,7 @@ static void cmpl_statment()
     }
     else {
         // expression statement
-        cmpl_expression(false);
+        cmpl_expression();
         consume_semicolon();
         emit_byte(OP_POP);
     }
@@ -240,7 +258,7 @@ static void cmpl_var_decl()
     byte_t glb_var_loc = parse_variable("Expected variable name.");
     
     if (match(TOKEN_EQUAL))
-        cmpl_expression(false);
+        cmpl_expression();
     else
         emit_byte(OP_NIL);
 
@@ -283,7 +301,7 @@ ParseRule rules[] = {
     [TOKEN_GREATER_EQUAL]   = {NULL,            cmpl_binary,    PREC_COMPARISON},
     [TOKEN_LESS]            = {NULL,            cmpl_binary,    PREC_COMPARISON},
     [TOKEN_LESS_EQUAL]      = {NULL,            cmpl_binary,    PREC_COMPARISON},
-    [TOKEN_IDENTIFIER]      = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_IDENTIFIER]      = {cmpl_variable,   NULL,           PREC_NONE},
     [TOKEN_STRING]          = {cmpl_string,     NULL,           PREC_NONE},
     [TOKEN_NUMBER]          = {cmpl_number,     NULL,           PREC_NONE},
     [TOKEN_AND]             = {NULL,            NULL,           PREC_NONE},
@@ -320,7 +338,8 @@ static void parse_precedence(Precedence min_prec) {
     }
 
     advance();
-    prefix_fn(false);
+    bool can_assign = min_prec <= PREC_ASSIGNMENT;
+    prefix_fn(can_assign);
 
     for (;;) {
         ParseRule* current_rule = get_rule(parser.current.type);
@@ -328,8 +347,11 @@ static void parse_precedence(Precedence min_prec) {
             break;
         }
         advance();
-        current_rule->infix_fn(false);
+        current_rule->infix_fn(can_assign);
     }
+
+    if (can_assign && match(TOKEN_EQUAL))
+        error_token(&parser.previous, "Invalid assignment target.");
 }
 
 static void syncronize()
@@ -366,7 +388,7 @@ bool compile(const char* source, Chunk* result_cnk) {
     parser.panic_mode = false;
 
     advance();
-    // cmpl_expression(false);
+    // cmpl_expression();
 
     while (!match(TOKEN_EOF)) {
         cmpl_declaration();

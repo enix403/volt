@@ -174,10 +174,35 @@ static InterpretResult run_machine()
                 printf("\n");
                 break;
 
+            // variables
             case OP_DEFINE_GLOBAL: {
                 ObjString* name = READ_STRING();
                 hashtable_set(&vm.globals, name, peekstack(0));
-                popstack();
+                popstack_discard(1);
+                break;
+            }
+
+            case OP_GET_GLOBAL: {
+                ObjString* name = READ_STRING();
+                Value res;
+                if (hashtable_get(&vm.globals, name, &res)) {
+                    pushstack(res);
+                }
+                else {
+                    runtime_error("Undefined variable \"%s\".", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+
+            case OP_SET_GLOBAL: {
+                ObjString* name = READ_STRING();
+                if (hashtable_set(&vm.globals, name, peekstack(0))) {
+                    // if it is not being overwritten
+                    hashtable_delete(&vm.globals, name);
+                    runtime_error("Undefined variable \"%s\".", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
                 break;
             }
 
