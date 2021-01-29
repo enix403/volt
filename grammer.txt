@@ -1,0 +1,21 @@
+
+
+print_stmt -> "print" expression ";" ;
+expr_stmt -> expression ";" ;
+
+block -> "{" declaration* "}";
+
+stmt --> print_stmt
+       | expr_stmt
+       | if_stmt
+       | for_stmt
+       | while_stmt
+       | return_stmt
+       | block;
+        
+declaration --> var_decl
+              | class_decl
+              | fun_decl
+              | stmt;
+
+program -> declaration* EOF;

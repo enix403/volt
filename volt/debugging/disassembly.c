@@ -39,10 +39,13 @@ int disassemble_instruction(Chunk* cnk, int offset) {
     byte_t instruction = cnk->code[offset];
     switch (instruction) {
 
-        case OP_RETURN:     return simple_instruction("OP_RETURN", offset);
-        case OP_LOADCONST:  return const_instruction( "OP_LOADCONST", offset, cnk);
-        case OP_POP:        return simple_instruction("OP_POP", offset);
+        case OP_LOADCONST:      return const_instruction("OP_LOADCONST", offset, cnk);
+        case OP_DEFINE_GLOBAL:  return const_instruction("OP_DEFINE_GLOBAL", offset, cnk);
+
         case OP_POPN:       return binary_instruction("OP_POPN", offset, cnk);
+        case OP_RETURN:     return simple_instruction("OP_RETURN", offset);
+        case OP_POP:        return simple_instruction("OP_POP", offset);
+        case OP_PRINT:      return simple_instruction("OP_PRINT", offset);
 
         case OP_NEGATE:     return simple_instruction("OP_NEGATE", offset);
         case OP_ADD:        return simple_instruction("OP_ADD", offset);

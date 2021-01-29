@@ -22,6 +22,7 @@ typedef struct {
 
     Obj* objects;
     HashTable interned_strings;
+    HashTable globals;
 } VM;
 
 extern VM vm;

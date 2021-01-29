@@ -23,7 +23,26 @@ add_executable(
     "volt/scanning/scanner.c"
     "volt/compiling/compiler.c"
 )
+
 set_property(TARGET app PROPERTY C_STANDARD 11)
+
+if (false)
+add_executable(
+    hashtable_test
+
+    "tests/hashtable_test.c"
+    "volt/mem.c"
+    "volt/vm.c"
+    "volt/hash_table.c"
+    "volt/code/chunk.c"
+    "volt/code/value.c"
+    "volt/code/object.c"
+    "volt/debugging/disassembly.c"
+    "volt/scanning/scanner.c"
+    "volt/compiling/compiler.c"
+)
+set_property(TARGET hashtable_test PROPERTY C_STANDARD 11)
+endif()
 # c versions go as 90 -> 99 -> 11 -> 17
 # 17 is not supported by cmake
 

@@ -29,7 +29,7 @@ static inline Chunk* current_chunk() { return _compiling_chunk; }
 static void error_token(Token* token, const char* msg) {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
-    fprintf(stderr, "[line %d] Compilation error ", token->line);
+    fprintf(stderr, "[line %d] Syntax error ", token->line);
 
     if (token->type == TOKEN_EOF) {
         fprintf(stderr, " at end");
@@ -44,9 +44,9 @@ static void error_token(Token* token, const char* msg) {
 }
 
 /* Token navigation helpers */
-static void _advance() {
+static void advance() {
     parser.previous = parser.current;
-    // jump through all consective error tokens at once in one _advance call
+    // jump through all consective error tokens at once in one advance call
     for (;;) {
         parser.current = scan_token();
         if (parser.current.type == TOKEN_ERROR) {
@@ -58,9 +58,21 @@ static void _advance() {
     }
 }
 
-static void _consume(TokenType type, const char* msg) {
+static inline bool check_token(TokenType type) { return parser.current.type == type; }
+
+static bool match(TokenType type)
+{
+    if (check_token(type)) {
+        advance();
+        return true;
+    }
+    return false;
+}
+
+static void consume(TokenType type, const char* msg)
+{
     if (parser.current.type == type) {
-        _advance();
+        advance();
         return;
     }
 
@@ -68,6 +80,15 @@ static void _consume(TokenType type, const char* msg) {
 }
 
 /* Code generation */
+
+static inline byte_t store_constant(Value val) {
+    int constant_loc = chunk_addconst(current_chunk(), val);
+    if (constant_loc >= UINT8_MAX) {
+        error_token(&parser.previous, "Too many constants in one chunk");
+    }
+    return (byte_t)constant_loc;
+}
+
 static inline void emit_byte(byte_t byte) {
     chunk_write(current_chunk(), byte);
 }
@@ -76,12 +97,9 @@ static inline void emit_bytes(byte_t byte1, byte_t byte2) {
     emit_byte(byte2);
 }
 
-static void emit_const(Value val) {
-    int constant_loc = chunk_addconst(current_chunk(), val);
-    if (constant_loc >= UINT8_MAX) {
-        error_token(&parser.previous, "Too many constants in one chunk");
-    }
-    emit_bytes(OP_LOADCONST, (byte_t)constant_loc);
+static inline void emit_const(Value val) {
+    byte_t constant_loc = store_constant(val);
+    emit_bytes(OP_LOADCONST, constant_loc);
 }
 
 /* Pratt's Parser */
@@ -113,6 +131,9 @@ static ParseRule* get_rule(TokenType token_type);
 
 
 /* Actual compilation logic */
+
+
+#if 1 /* ==========EXPRESSIONS============= */
 static inline void cmpl_expression(bool can_assign) {
     parse_precedence(PREC_ASSIGNMENT);
 }
@@ -156,7 +177,7 @@ static void cmpl_binary(bool can_assign) {
 }
 static void cmpl_grouping(bool can_assign) {
     cmpl_expression(can_assign);
-    _consume(TOKEN_RIGHT_PAREN, "Expected closing ')'");
+    consume(TOKEN_RIGHT_PAREN, "Expected closing ')'");
 }
 static void cmpl_literal(bool can_assign) {
     switch(parser.previous.type) {
@@ -173,7 +194,73 @@ static void cmpl_string(bool can_assign) {
         parser.previous.length - 2
     )));
 }
+#endif
 
+#if 1 /* ==========STATEMENTS============= */
+// forward declare because they refer each other
+static void cmpl_statment();
+static void cmpl_declaration();
+
+static inline void consume_semicolon() { consume(TOKEN_SEMICOLON, "Expected \";\" after statement."); }
+
+static inline byte_t store_identifier_constant(Token* name) {
+    return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
+}
+
+// returns the locations of constant that points to the string of variable name
+static byte_t parse_variable(const char* error_msg)
+{
+    consume(TOKEN_IDENTIFIER, error_msg);
+    return store_identifier_constant(&parser.previous);
+}
+
+static inline void cmpl_print_stmt()
+{
+    cmpl_expression(false);
+    consume_semicolon();
+    emit_byte(OP_PRINT);
+}
+
+static void cmpl_statment()
+{
+    if (match(TOKEN_PRINT)) {
+        cmpl_print_stmt();
+    }
+    else {
+        // expression statement
+        cmpl_expression(false);
+        consume_semicolon();
+        emit_byte(OP_POP);
+    }
+}
+
+static void cmpl_var_decl()
+{
+    // "global variable location"
+    byte_t glb_var_loc = parse_variable("Expected variable name.");
+    
+    if (match(TOKEN_EQUAL))
+        cmpl_expression(false);
+    else
+        emit_byte(OP_NIL);
+
+    
+    consume_semicolon();
+
+    // store in hash table
+    emit_bytes(OP_DEFINE_GLOBAL, glb_var_loc);
+}
+
+static void cmpl_declaration()
+{
+    if (match(TOKEN_VAR)) {
+        cmpl_var_decl();
+    }
+    else {
+        cmpl_statment();
+    }
+}
+#endif
 /* Precedence and rule table */
 // clang-format off
 ParseRule rules[] = {
@@ -232,7 +319,7 @@ static void parse_precedence(Precedence min_prec) {
         return;
     }
 
-    _advance();
+    advance();
     prefix_fn(false);
 
     for (;;) {
@@ -240,8 +327,34 @@ static void parse_precedence(Precedence min_prec) {
         if (current_rule->precedence < min_prec) {
             break;
         }
-        _advance();
+        advance();
         current_rule->infix_fn(false);
+    }
+}
+
+static void syncronize()
+{
+    parser.panic_mode = false;
+
+    while (parser.current.type != TOKEN_EOF) {
+        if (parser.previous.type == TOKEN_SEMICOLON)
+            return;
+
+        switch (parser.current.type) {
+            case TOKEN_CLASS:
+            case TOKEN_FUN:
+            case TOKEN_VAR:
+            case TOKEN_FOR:
+            case TOKEN_IF:
+            case TOKEN_WHILE:
+            case TOKEN_PRINT:
+            case TOKEN_RETURN:
+                return;
+
+            default: break; // Do nothing.
+        }
+
+        advance();
     }
 }
 
@@ -252,8 +365,13 @@ bool compile(const char* source, Chunk* result_cnk) {
     parser.had_error = false;
     parser.panic_mode = false;
 
-    _advance();
-    cmpl_expression(false);
+    advance();
+    // cmpl_expression(false);
+
+    while (!match(TOKEN_EOF)) {
+        cmpl_declaration();
+    }
+
     emit_byte(OP_RETURN);
 
     _compiling_chunk = NULL;

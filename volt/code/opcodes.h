@@ -7,6 +7,10 @@ typedef enum {
     OP_POP,
     OP_POPN,
 
+    // control flow and statments
+    OP_PRINT,
+    OP_DEFINE_GLOBAL,
+
     // instructions that put constants on the stack
     OP_NIL,
     OP_TRUE,

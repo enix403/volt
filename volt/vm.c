@@ -18,11 +18,13 @@ void vm_init() {
     reset_stack();
     vm.objects = NULL;
     hashtable_init(&vm.interned_strings);
+    hashtable_init(&vm.globals);
 }
 void vm_free() {
     free_objects(vm.objects);
     vm_init();
     hashtable_free(&vm.interned_strings);
+    hashtable_free(&vm.globals);
 }
 
 static inline void pushstack(Value val) {
@@ -81,6 +83,8 @@ static void concatenate(ObjString* a, ObjString* b)
 /* Actual implementation of each opcode */ 
 #define READ_BYTE() (*vm.prog_counter++)
 #define READ_CONST() (vm.cnk->constants.values[READ_BYTE()])
+#define READ_STRING() OBJ_AS_STRING(READ_CONST())
+
 #define BINARY_OPERATION(valtype_macro, op)                             \
     if (!IS_VAL_NUM(peekstack(0)) || !IS_VAL_NUM(peekstack(1))) { \
         runtime_error("Operands must be numbers.");                     \
@@ -100,12 +104,7 @@ static InterpretResult run_machine()
         instruction = READ_BYTE();
 
         switch (instruction) {
-            case OP_RETURN:     { 
-                print_val(popstack()); 
-                printf("\n");
-                return INTERPRET_OK; 
-            }
-
+            case OP_RETURN:     return INTERPRET_OK;
             case OP_LOADCONST:  pushstack(READ_CONST()); break;
 
             case OP_POP:    popstack(); break;
@@ -124,6 +123,7 @@ static InterpretResult run_machine()
                 break;
             }
 
+            // arithematic instructions 
             case OP_ADD: {
                 Value vala = peekstack(1);
                 Value valb = peekstack(0);
@@ -144,7 +144,7 @@ static InterpretResult run_machine()
                     pushstack(MK_VAL_NUM(a + b));
                 }
                 else {
-                    runtime_error("Operands must be two numbers or strins.");
+                    runtime_error("Operands must be two numbers or strings.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;
@@ -153,6 +153,7 @@ static InterpretResult run_machine()
             case OP_MULTIPLY:   { BINARY_OPERATION(MK_VAL_NUM, *); break; }
             case OP_DIVIDE:     { BINARY_OPERATION(MK_VAL_NUM, /); break; }
 
+            // stack's constant instrucions
             case OP_NIL:    pushstack(MK_VAL_NIL); break;
             case OP_TRUE:   pushstack(MK_VAL_BOOL(true)); break;
             case OP_FALSE:  pushstack(MK_VAL_BOOL(false)); break;
@@ -168,13 +169,28 @@ static InterpretResult run_machine()
             case OP_LOGIC_GREATER:  { BINARY_OPERATION(MK_VAL_BOOL, >); break; }
             case OP_LOGIC_LESS:     { BINARY_OPERATION(MK_VAL_BOOL, <); break; }
 
+            case OP_PRINT: 
+                print_val(popstack());
+                printf("\n");
+                break;
+
+            case OP_DEFINE_GLOBAL: {
+                ObjString* name = READ_STRING();
+                hashtable_set(&vm.globals, name, peekstack(0));
+                popstack();
+                break;
+            }
+
+
             default:
                 break;
         }
     }
 }
+#undef BINARY_OPERATION
 #undef READ_BYTE
 #undef READ_CONST
+#undef READ_STRING
 
 
 /* Runner functions */
