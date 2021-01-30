@@ -134,7 +134,7 @@ bool hashtable_delete(HashTable* table, ObjString* key)
     ent->value = MK_VAL_BOOL(true);
 
     // Note that table->count is not decremented
-    // because table->count includes tombstones
+    // because it includes tombstones
 
     return true;
 }

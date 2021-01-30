@@ -2,12 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "code/chunk.h"
-#include "code/value.h"
-#include "code/opcodes.h"
+// #include "code/chunk.h"
+// #include "code/value.h"
+// #include "code/opcodes.h"
 #include "vm.h"
-#include "debugging/disassembly.h"
-#include "scanning/scanner.h"
+// #include "debugging/disassembly.h"
+// #include "scanning/scanner.h"
 
 typedef FILE File;
 

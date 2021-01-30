@@ -12,9 +12,9 @@ static int simple_instruction(const char* name, int offset)
 }
 
 // instruction that takes one operand
-static int binary_instruction(const char* name, int offset, Chunk* cnk)
+static int byte_instruction(const char* name, int offset, Chunk* cnk)
 {
-    printf("%-16s %4d\n ", name, cnk->code[offset + 1]);
+    printf("%-16s %4d\n", name, cnk->code[offset + 1]);
     return offset + 2;
 }
 
@@ -45,10 +45,13 @@ int disassemble_instruction(Chunk* cnk, int offset)
     // clang-format off
         case OP_LOADCONST:      return const_instruction("OP_LOADCONST", offset, cnk);
         case OP_DEFINE_GLOBAL:  return const_instruction("OP_DEFINE_GLOBAL", offset, cnk);
+
         case OP_GET_GLOBAL:     return const_instruction("OP_GET_GLOBAL", offset, cnk);
         case OP_SET_GLOBAL:     return const_instruction("OP_SET_GLOBAL", offset, cnk);
+        case OP_GET_LOCAL:      return byte_instruction("OP_GET_LOCAL", offset, cnk);
+        case OP_SET_LOCAL:      return byte_instruction("OP_SET_LOCAL", offset, cnk);
 
-        case OP_POPN:       return binary_instruction("OP_POPN", offset, cnk);
+        case OP_POPN:       return byte_instruction("OP_POPN", offset, cnk);
         case OP_RETURN:     return simple_instruction("OP_RETURN", offset);
         case OP_POP:        return simple_instruction("OP_POP", offset);
         case OP_PRINT:      return simple_instruction("OP_PRINT", offset);

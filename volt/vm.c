@@ -206,6 +206,18 @@ static InterpretResult run_machine()
                 break;
             }
 
+            case OP_GET_LOCAL: {
+                byte_t slot_index = READ_BYTE();
+                pushstack(vm.stack[slot_index]);
+                break;
+            }
+
+            case OP_SET_LOCAL: {
+                byte_t slot_index = READ_BYTE();
+                vm.stack[slot_index] = peekstack(0); // remember, don't pop because assignment is an expression
+                break;
+            }
+
 
             default:
                 break;

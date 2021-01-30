@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "scanning/scanner.h"
 #include "code/opcodes.h"
@@ -14,6 +15,8 @@
 #include "debugging/disassembly.h"
 #endif
 
+#define MAX_BYTE_COUNT (UINT8_MAX + 1)
+
 typedef struct {
     Token previous;
     Token current;
@@ -21,9 +24,49 @@ typedef struct {
     bool panic_mode;
 } Parser;
 
+typedef enum {
+    PREC_NONE,
+    PREC_ASSIGNMENT,  // =
+    PREC_OR,          // or
+    PREC_AND,         // and
+    PREC_EQUALITY,    // == !=
+    PREC_COMPARISON,  // < > <= >=
+    PREC_TERM,        // + -
+    PREC_FACTOR,      // * /
+    PREC_UNARY,       // ! -
+    PREC_CALL,        // . ()
+    PREC_PRIMARY
+} Precedence;
+
+typedef void (*ParseFn)(bool can_assign);
+
+typedef struct {
+    ParseFn prefix_fn;
+    ParseFn infix_fn;
+    Precedence precedence;
+} ParseRule;
+
+typedef struct {
+    Token name;
+    int depth;
+} Local;
+
+typedef struct {
+    Local locals[MAX_BYTE_COUNT];
+    int locals_count;
+    int current_depth; // the current scope depth
+} Compiler;
+
 Parser parser;
+Compiler* compiler = NULL;
 Chunk* _compiling_chunk;
 static inline Chunk* current_chunk() { return _compiling_chunk; }
+
+static void init_compiler(Compiler* _compiler) {
+    compiler = _compiler;
+    compiler->locals_count = 0;
+    compiler->current_depth = 0;
+}
 
 /* Error handling */
 static void error_token(Token* token, const char* msg) {
@@ -107,37 +150,11 @@ static inline byte_t store_identifier_constant(Token* name) {
 }
 
 /* Pratt's Parser */
-typedef enum {
-    PREC_NONE,
-    PREC_ASSIGNMENT,  // =
-    PREC_OR,          // or
-    PREC_AND,         // and
-    PREC_EQUALITY,    // == !=
-    PREC_COMPARISON,  // < > <= >=
-    PREC_TERM,        // + -
-    PREC_FACTOR,      // * /
-    PREC_UNARY,       // ! -
-    PREC_CALL,        // . ()
-    PREC_PRIMARY
-} Precedence;
-
-typedef void (*ParseFn)(bool can_assign);
-
-typedef struct {
-    ParseFn prefix_fn;
-    ParseFn infix_fn;
-    Precedence precedence;
-} ParseRule;
-
-
 static void parse_precedence(Precedence min_prec);
 static ParseRule* get_rule(TokenType token_type);
 
 
 /* Actual compilation logic */
-
-
-
 #if 1 /* ==========EXPRESSIONS============= */
 static inline void cmpl_expression() {
     parse_precedence(PREC_ASSIGNMENT);
@@ -200,15 +217,45 @@ static void cmpl_string(bool can_assign) {
     )));
 }
 
+static inline bool identifiers_equal(Token* a, Token* b) {
+    if (a->length != b->length) 
+        return false;
+    return memcmp(a->start, b->start, a->length) == 0;
+}
+
+static int resolve_local(Compiler* compiler, Token* name) {
+    for (int i = compiler->locals_count - 1; i >= 0; i--) {
+        Local* local = compiler->locals + i;
+        if (identifiers_equal(name, &local->name)) {
+            if (local->depth == -1) {
+                error_token(&parser.previous, "Cannot read variable in its own initializer.");
+            }
+            return i;
+        } 
+    }
+    return -1;
+}
+
 static inline void named_variable(Token* name, bool can_assign) {
-    byte_t varloc = store_identifier_constant(name);
+    byte_t get_op, set_op; // the opcodes for setting and getting variables
+    int location = resolve_local(compiler, name);
+    if (location == -1) {
+        location = store_identifier_constant(name);
+        get_op = OP_GET_GLOBAL;
+        set_op = OP_SET_GLOBAL;
+    }
+    else {
+        get_op = OP_GET_LOCAL;
+        set_op = OP_SET_LOCAL;
+    }
+
 
     if (can_assign && match(TOKEN_EQUAL)) {
         cmpl_expression();
-        emit_bytes(OP_SET_GLOBAL, varloc);
+        emit_bytes(set_op, (byte_t)location);
     }
     else {
-        emit_bytes(OP_GET_GLOBAL, varloc);
+        emit_bytes(get_op, (byte_t)location);
     }
 }
 
@@ -220,16 +267,87 @@ static void cmpl_variable(bool can_assign) {
 
 #if 1 /* ==========STATEMENTS============= */
 // forward declare because they refer each other
-static void cmpl_statment();
+static void cmpl_statement();
 static void cmpl_declaration();
 
 static inline void consume_semicolon() { consume(TOKEN_SEMICOLON, "Expected \";\" after statement."); }
+static inline void begin_scope() { compiler->current_depth++; }
+static void end_scope() { 
+    compiler->current_depth--;
+    /*
+        while ( current->localCount > 0 && 
+                current->locals[current->localCount - 1].depth > current->scopeDepth) {
+            emitByte(OP_POP);
+            current->localCount--;
+        }
+    */
+
+    int destroy_local_count = 0;
+    while (  compiler->locals_count > 0 &&
+            compiler->locals[compiler->locals_count - 1].depth > compiler->current_depth) 
+    {
+        destroy_local_count++;
+        compiler->locals_count--;
+    }
+
+
+    // clang-format off
+    switch (destroy_local_count) {
+        case 0:     return; // do nothing if no locals are present
+        case 1:     emit_byte(OP_POP); break; // use optimized OP_POP if only one local is present
+        default:    emit_bytes(OP_POPN, (byte_t)destroy_local_count); break;
+    }
+    // clang-format on
+}
+
+// adds the local the locals array inside compiler
+static void add_local(Token name) {
+    if (compiler->locals_count > MAX_BYTE_COUNT) {
+        error_token(&parser.previous, "Too many locals in one block.");
+        return;
+    }
+    
+
+    // get the top empty slot
+    Local* local = &compiler->locals[compiler->locals_count++];
+    local->name = name;
+    // local->depth = compiler->current_depth;
+    local->depth = -1;
+}
+
+
+
+static void declare_local() {
+    // skip any global variables
+    if (compiler->current_depth == 0)
+        return;
+
+    Token name = parser.previous;
+    for (int i = compiler->locals_count - 1; i >= 0; i--) {
+        Local* local = compiler->locals + i;
+        if (local->depth != -1 && local->depth < compiler->current_depth) {
+            break;
+        }
+
+        if (identifiers_equal(&name, &local->name)) {
+            error_token(&name, "Already a variable with same name in the current scope.");
+        }
+    }
+    add_local(name);
+}
 
 // returns the locations of constant that points to the string of variable name
 static byte_t parse_variable(const char* error_msg)
 {
     consume(TOKEN_IDENTIFIER, error_msg);
+    declare_local();
+    if (compiler->current_depth > 0)
+        return 0;
     return store_identifier_constant(&parser.previous);
+}
+
+static inline void mark_initialized() {
+    compiler->locals[compiler->locals_count - 1].depth = compiler->current_depth;
 }
 
 static inline void cmpl_print_stmt()
@@ -239,10 +357,25 @@ static inline void cmpl_print_stmt()
     emit_byte(OP_PRINT);
 }
 
-static void cmpl_statment()
+static void cmpl_block() {
+    while (!check_token(TOKEN_RIGHT_BRACE) && !check_token(TOKEN_EOF)) {
+        cmpl_declaration();
+    }
+
+    consume(TOKEN_RIGHT_BRACE, "Expected '}' after block.");
+}
+
+static void cmpl_statement()
 {
+    // print statement
     if (match(TOKEN_PRINT)) {
         cmpl_print_stmt();
+    }
+    // block statement
+    else if (match(TOKEN_LEFT_BRACE)) {
+        begin_scope();
+        cmpl_block();
+        end_scope();
     }
     else {
         // expression statement
@@ -265,7 +398,13 @@ static void cmpl_var_decl()
     
     consume_semicolon();
 
-    // store in hash table
+    ///// defineVariable(byte_t glb_var_loc)
+
+    // store any global in globals hash table
+    if (compiler->current_depth > 0) {
+        mark_initialized();
+        return;
+    }
     emit_bytes(OP_DEFINE_GLOBAL, glb_var_loc);
 }
 
@@ -275,7 +414,7 @@ static void cmpl_declaration()
         cmpl_var_decl();
     }
     else {
-        cmpl_statment();
+        cmpl_statement();
     }
 }
 #endif
@@ -382,6 +521,10 @@ static void syncronize()
 
 bool compile(const char* source, Chunk* result_cnk) {
     scanner_init(source);
+
+    Compiler compiler;
+    init_compiler(&compiler);
+
     _compiling_chunk = result_cnk;
     
     parser.had_error = false;
