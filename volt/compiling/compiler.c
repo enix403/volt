@@ -163,7 +163,7 @@ static void patch_jump(int jmp_opcode_offset) {
 
     // calculate the offset
     // at this time count is the index of the taget (future) instruction
-    int offset = cnk->count - jmp_opcode_offset - 2;
+    unsigned int offset = cnk->count - jmp_opcode_offset - 2;
     
     if (offset > UINT16_MAX) 
     {
@@ -175,6 +175,17 @@ static void patch_jump(int jmp_opcode_offset) {
     cnk->code[jmp_opcode_offset + 1] = offset & 0xff;
 }
 
+static void emit_loop(int start_offset) {
+    unsigned int jmp_offset = current_chunk()->count - start_offset + 3;
+
+    if (jmp_offset > UINT16_MAX) {
+        error_token(&parser.previous, "Loop body too large.");
+    }
+
+    emit_byte(OP_LOOP);
+    emit_byte((jmp_offset >> 8) & 0xff);
+    emit_byte(jmp_offset & 0xff);
+}
 
 /* Pratt's Parser */
 static void parse_precedence(Precedence min_prec);
@@ -396,6 +407,22 @@ static inline void cmpl_print_stmt()
     emit_byte(OP_PRINT);
 }
 
+static void cmpl_while_stmt() {
+    consume(TOKEN_LEFT_PAREN, "Expected '(' after while statement.");
+    int loop_start = current_chunk()->count;
+    cmpl_expression();
+    consume(TOKEN_RIGHT_PAREN, "Expected ')' after while statement's condition.");
+
+    int exit_jump = emit_jump(OP_JUMP_IF_FALSE);
+    emit_byte(OP_POP);
+
+    cmpl_statement();
+
+    emit_loop(loop_start);
+    patch_jump(exit_jump);
+    emit_byte(OP_POP);
+}
+
 static void cmpl_if_stmt() {
     consume(TOKEN_LEFT_PAREN, "Expected '(' after if statement.");
     cmpl_expression();
@@ -433,6 +460,10 @@ static void cmpl_statement()
     // if statement
     else if (match(TOKEN_IF)) {
         cmpl_if_stmt();
+    }
+    // while statement
+    else if (match(TOKEN_WHILE)) {
+        cmpl_while_stmt();
     }
     // block statement
     else if (match(TOKEN_LEFT_BRACE)) {
