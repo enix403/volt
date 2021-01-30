@@ -18,6 +18,20 @@ static int byte_instruction(const char* name, int offset, Chunk* cnk)
     return offset + 2;
 }
 
+
+static int jump_instruction(const char* name, int sign,
+                           int offset, Chunk* chunk) {
+  uint16_t jump = (uint16_t)(chunk->code[offset + 1] << 8);
+  jump |= chunk->code[offset + 2];
+  printf("%-16s %4d -> %d (%c%d)\n", name, offset,
+         offset + 3 + sign * jump,
+         sign == -1 ? '-' : '+',
+         jump);
+  return offset + 3;
+}
+
+
+
 // pretty prints an instruction that takes index of a constant as an operand
 static int const_instruction(const char* name, int offset, Chunk* cnk)
 {
@@ -77,6 +91,11 @@ int disassemble_instruction(Chunk* cnk, int offset)
         case OP_BIT_NOT:    return simple_instruction("OP_BIT_NOT", offset);
         case OP_BIT_AND:    return simple_instruction("OP_BIT_AND", offset);
         case OP_BIT_OR:     return simple_instruction("OP_BIT_OR", offset);
+
+        case OP_JUMP_IF_FALSE:  return jump_instruction("OP_JUMP_IF_FALSE", 1, offset, cnk);
+        case OP_JUMP_IF_TRUE:  return jump_instruction("OP_JUMP_IF_TRUE", 1, offset, cnk);
+        case OP_JUMP:           return jump_instruction("OP_JUMP", 1, offset, cnk);
+        case OP_LOOP:           return jump_instruction("OP_LOOP", -1, offset, cnk);
 
         default:
             printf("Unknown opcode %d\n", instruction);

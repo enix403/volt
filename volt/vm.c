@@ -7,8 +7,11 @@
 #include "code/opcodes.h"
 #include "mem.h"
 #include "compiling/compiler.h"
+#include "debugging/disassembly.h"
 
 VM vm;
+typedef uint16_t short_t;
+
 
 /* Stack handling and vm initializtion */
 static inline void reset_stack() {
@@ -82,6 +85,8 @@ static void concatenate(ObjString* a, ObjString* b)
 }
 /* Actual implementation of each opcode */ 
 #define READ_BYTE() (*vm.prog_counter++)
+#define READ_SHORT() \
+    (vm.prog_counter += 2, (uint16_t)(vm.prog_counter[-2] << 8 | vm.prog_counter[-1]))
 #define READ_CONST() (vm.cnk->constants.values[READ_BYTE()])
 #define READ_STRING() OBJ_AS_STRING(READ_CONST())
 
@@ -218,6 +223,34 @@ static InterpretResult run_machine()
                 break;
             }
 
+            // jumps
+            case OP_JUMP_IF_FALSE: {
+                short_t offset = READ_SHORT();
+                if (is_falsey(peekstack(0)))
+                    vm.prog_counter += offset;
+                break;
+            }
+
+            case OP_JUMP_IF_TRUE: {
+                short_t offset = READ_SHORT();
+                if (!is_falsey(peekstack(0)))
+                    vm.prog_counter += offset;
+                break;
+            }
+
+            case OP_JUMP: {
+                short_t offset = READ_SHORT();
+                vm.prog_counter += offset;
+                break;
+            }
+
+            case OP_LOOP: {
+                short_t offset = READ_SHORT();
+                vm.prog_counter -= offset;
+                break;
+            }
+
+
 
             default:
                 break;
@@ -226,6 +259,7 @@ static InterpretResult run_machine()
 }
 #undef BINARY_OPERATION
 #undef READ_BYTE
+#undef READ_SHORT
 #undef READ_CONST
 #undef READ_STRING
 

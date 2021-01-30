@@ -145,9 +145,36 @@ static inline void emit_const(Value val) {
     emit_bytes(OP_LOADCONST, constant_loc);
 }
 
+
 static inline byte_t store_identifier_constant(Token* name) {
     return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
 }
+
+/* =========== JUMPS =========== */
+// return the index of the immediate next byte after the jump
+static int emit_jump(int jmp_opcode) {
+    emit_byte(jmp_opcode);
+    emit_bytes(0xff, 0xff);
+    return current_chunk()->count - 2;
+}
+
+static void patch_jump(int jmp_opcode_offset) {
+    Chunk* cnk = current_chunk();
+
+    // calculate the offset
+    // at this time count is the index of the taget (future) instruction
+    int offset = cnk->count - jmp_opcode_offset - 2;
+    
+    if (offset > UINT16_MAX) 
+    {
+        error_token(&parser.previous, "Too long jump.");
+        return;
+    }
+
+    cnk->code[jmp_opcode_offset] = (offset >> 8) & 0xff;
+    cnk->code[jmp_opcode_offset + 1] = offset & 0xff;
+}
+
 
 /* Pratt's Parser */
 static void parse_precedence(Precedence min_prec);
@@ -217,6 +244,21 @@ static void cmpl_string(bool can_assign) {
     )));
 }
 
+static void cmpl_lgc_and(bool can_assign) {
+    int jump = emit_jump(OP_JUMP_IF_FALSE);
+    emit_byte(OP_POP);
+    parse_precedence(PREC_AND);
+    patch_jump(jump);
+}
+
+static void cmpl_lgc_or(bool can_assign) {
+    int jump = emit_jump(OP_JUMP_IF_TRUE);
+    emit_byte(OP_POP);
+    parse_precedence(PREC_OR);
+    patch_jump(jump);
+}
+
+// ========= VARIABLES AND IDENTIFIERS===============
 static inline bool identifiers_equal(Token* a, Token* b) {
     if (a->length != b->length) 
         return false;
@@ -314,9 +356,6 @@ static void add_local(Token name) {
     // local->depth = compiler->current_depth;
     local->depth = -1;
 }
-
-
-
 static void declare_local() {
     // skip any global variables
     if (compiler->current_depth == 0)
@@ -357,6 +396,26 @@ static inline void cmpl_print_stmt()
     emit_byte(OP_PRINT);
 }
 
+static void cmpl_if_stmt() {
+    consume(TOKEN_LEFT_PAREN, "Expected '(' after if statement.");
+    cmpl_expression();
+    consume(TOKEN_RIGHT_PAREN, "Expected ')' after if statement's condition.");
+
+    int then_jump = emit_jump(OP_JUMP_IF_FALSE);
+    emit_byte(OP_POP);
+    cmpl_statement();
+
+    int else_jump = emit_jump(OP_JUMP); 
+    patch_jump(then_jump);
+
+    emit_byte(OP_POP);
+
+    if (match(TOKEN_ELSE))
+        cmpl_statement();
+
+    patch_jump(else_jump);
+}
+
 static void cmpl_block() {
     while (!check_token(TOKEN_RIGHT_BRACE) && !check_token(TOKEN_EOF)) {
         cmpl_declaration();
@@ -370,6 +429,10 @@ static void cmpl_statement()
     // print statement
     if (match(TOKEN_PRINT)) {
         cmpl_print_stmt();
+    }
+    // if statement
+    else if (match(TOKEN_IF)) {
+        cmpl_if_stmt();
     }
     // block statement
     else if (match(TOKEN_LEFT_BRACE)) {
@@ -443,7 +506,7 @@ ParseRule rules[] = {
     [TOKEN_IDENTIFIER]      = {cmpl_variable,   NULL,           PREC_NONE},
     [TOKEN_STRING]          = {cmpl_string,     NULL,           PREC_NONE},
     [TOKEN_NUMBER]          = {cmpl_number,     NULL,           PREC_NONE},
-    [TOKEN_AND]             = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_AND]             = {NULL,            cmpl_lgc_and,   PREC_AND},
     [TOKEN_CLASS]           = {NULL,            NULL,           PREC_NONE},
     [TOKEN_ELSE]            = {NULL,            NULL,           PREC_NONE},
     [TOKEN_FALSE]           = {cmpl_literal,    NULL,           PREC_NONE},
@@ -451,7 +514,7 @@ ParseRule rules[] = {
     [TOKEN_FUN]             = {NULL,            NULL,           PREC_NONE},
     [TOKEN_IF]              = {NULL,            NULL,           PREC_NONE},
     [TOKEN_NIL]             = {cmpl_literal,    NULL,           PREC_NONE},
-    [TOKEN_OR]              = {NULL,            NULL,           PREC_NONE},
+    [TOKEN_OR]              = {NULL,            cmpl_lgc_or,    PREC_OR},
     [TOKEN_PRINT]           = {NULL,            NULL,           PREC_NONE},
     [TOKEN_RETURN]          = {NULL,            NULL,           PREC_NONE},
     [TOKEN_SUPER]           = {NULL,            NULL,           PREC_NONE},

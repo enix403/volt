@@ -41,4 +41,10 @@ typedef enum {
     OP_BIT_NOT,
     OP_BIT_AND,
     OP_BIT_OR,
+
+    // jumps
+    OP_JUMP_IF_FALSE,
+    OP_JUMP_IF_TRUE,
+    OP_JUMP,
+    OP_LOOP
 } OpCode;
