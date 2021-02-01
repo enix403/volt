@@ -48,9 +48,9 @@ static void start_repl() {
 
     // Keeps reading for new lines until EOF and runs them
     while (1) {
-        printf(">> ");
+        printf(">>> ");
         if (!fgets(line, sizeof(line), stdin)) {
-            printf("Exiting...\n");
+            printf("\nExiting...\n");
             break;
         }
 

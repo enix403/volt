@@ -111,7 +111,7 @@ bool hashtable_get(HashTable* table, ObjString* key, Value* result_val)
         return false;
 
     HashTableEntry* ent = find_entry(table->entries, table->capacity, key);
-    if (ent == NULL)
+    if (ent->key == NULL)
         return false;
 
     *result_val = ent->value;

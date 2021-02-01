@@ -109,7 +109,7 @@ static InterpretResult run_machine()
         instruction = READ_BYTE();
 
         switch (instruction) {
-            case OP_RETURN:     return INTERPRET_OK;
+            case OP_RETURN:     printf("[Stack count = %d]\n", (int)(vm.stack_top - vm.stack)); return INTERPRET_OK;
             case OP_LOADCONST:  pushstack(READ_CONST()); break;
 
             case OP_POP:    popstack(); break;
@@ -208,6 +208,8 @@ static InterpretResult run_machine()
                     runtime_error("Undefined variable \"%s\".", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+                // note that we don't pop it off the stack because
+                // assignment is an expression
                 break;
             }
 

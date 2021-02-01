@@ -54,21 +54,22 @@ typedef struct {
 typedef struct {
     Local locals[MAX_BYTE_COUNT];
     int locals_count;
-    int current_depth; // the current scope depth
+    int cur_scope_depth; // the current scope depth
 } Compiler;
 
 Parser parser;
-Compiler* compiler = NULL;
 Chunk* _compiling_chunk;
 static inline Chunk* current_chunk() { return _compiling_chunk; }
+Compiler* compiler = NULL;
 
 static void init_compiler(Compiler* _compiler) {
     compiler = _compiler;
     compiler->locals_count = 0;
-    compiler->current_depth = 0;
+    compiler->cur_scope_depth = 0;
 }
 
 /* Error handling */
+#if 1
 static void error_token(Token* token, const char* msg) {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
@@ -85,8 +86,10 @@ static void error_token(Token* token, const char* msg) {
     fprintf(stderr, ": %s\n", msg);
     parser.had_error = true;
 }
+#endif
 
 /* Token navigation helpers */
+#if 1
 static void advance() {
     parser.previous = parser.current;
     // jump through all consective error tokens at once in one advance call
@@ -121,15 +124,16 @@ static void consume(TokenType type, const char* msg)
 
     error_token(&parser.current, msg);
 }
+#endif
 
-/* Code generation */
-
-static inline byte_t store_constant(Value val) {
+/* Code generation helpers */
+#if 1
+static inline int store_constant(Value val) {
     int constant_loc = chunk_addconst(current_chunk(), val);
-    if (constant_loc >= UINT8_MAX) {
+    if (constant_loc > UINT8_MAX) {
         error_token(&parser.previous, "Too many constants in one chunk");
     }
-    return (byte_t)constant_loc;
+    return constant_loc;
 }
 
 static inline void emit_byte(byte_t byte) {
@@ -141,14 +145,10 @@ static inline void emit_bytes(byte_t byte1, byte_t byte2) {
 }
 
 static inline void emit_const(Value val) {
-    byte_t constant_loc = store_constant(val);
+    byte_t constant_loc = (byte_t)store_constant(val);
     emit_bytes(OP_LOADCONST, constant_loc);
 }
 
-
-static inline byte_t store_identifier_constant(Token* name) {
-    return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
-}
 
 /* =========== JUMPS =========== */
 // return the index of the immediate next byte after the jump
@@ -186,6 +186,7 @@ static void emit_loop(int start_offset) {
     emit_byte((jmp_offset >> 8) & 0xff);
     emit_byte(jmp_offset & 0xff);
 }
+#endif
 
 /* Pratt's Parser */
 static void parse_precedence(Precedence min_prec);
@@ -270,33 +271,61 @@ static void cmpl_lgc_or(bool can_assign) {
 }
 
 // ========= VARIABLES AND IDENTIFIERS===============
+
+static inline int identifier_constant(Token* name) {
+    return store_constant(MK_VAL_OBJ(copy_string(name->start, name->length)));
+}
+
+// reads the next variable identifier, stores it in constants table, and returns it location 
+static inline byte_t parse_variable(const char* msg) {
+    consume(TOKEN_IDENTIFIER, msg);
+    if (compiler->cur_scope_depth > 0) return 0;
+    return (byte_t) identifier_constant(&parser.previous);
+}
+
+static inline void consume_semicolon() { consume(TOKEN_SEMICOLON, "Expected ';' after statment."); }
+
 static inline bool identifiers_equal(Token* a, Token* b) {
     if (a->length != b->length) 
         return false;
     return memcmp(a->start, b->start, a->length) == 0;
 }
 
-static int resolve_local(Compiler* compiler, Token* name) {
+
+static int resolve_local(Token* name) {
     for (int i = compiler->locals_count - 1; i >= 0; i--) {
         Local* local = compiler->locals + i;
         if (identifiers_equal(name, &local->name)) {
+
             if (local->depth == -1) {
-                error_token(&parser.previous, "Cannot read variable in its own initializer.");
+                return -2;
             }
+
             return i;
-        } 
+        }
     }
+
     return -1;
 }
 
-static inline void named_variable(Token* name, bool can_assign) {
-    byte_t get_op, set_op; // the opcodes for setting and getting variables
-    int location = resolve_local(compiler, name);
-    if (location == -1) {
-        location = store_identifier_constant(name);
+static void cmpl_variable(bool can_assign) {
+    // byte_t varloc = identifier_constant(&parser.previous); 
+    byte_t get_op, set_op;
+    // error_token(name, "Cannot access variable in its own initializer.");
+    Token* name = &parser.previous;
+    int varloc = resolve_local(name);
+    // defined but not yet initialized
+    if (varloc == -2) {
+        error_token(name, "Cannot access variable in its own initializer.");
+        return;
+    }
+    // global variable
+    else if (varloc == -1) {
         get_op = OP_GET_GLOBAL;
         set_op = OP_SET_GLOBAL;
+        varloc = (int)identifier_constant(name);
     }
+    // local variable
     else {
         get_op = OP_GET_LOCAL;
         set_op = OP_SET_LOCAL;
@@ -305,16 +334,13 @@ static inline void named_variable(Token* name, bool can_assign) {
 
     if (can_assign && match(TOKEN_EQUAL)) {
         cmpl_expression();
-        emit_bytes(set_op, (byte_t)location);
+        emit_bytes(set_op, (byte_t)varloc);
     }
     else {
-        emit_bytes(get_op, (byte_t)location);
+        emit_bytes(get_op, (byte_t)varloc);
     }
 }
 
-static void cmpl_variable(bool can_assign) {
-    return named_variable(&parser.previous, can_assign);
-}
 
 #endif
 
@@ -323,81 +349,77 @@ static void cmpl_variable(bool can_assign) {
 static void cmpl_statement();
 static void cmpl_declaration();
 
-static inline void consume_semicolon() { consume(TOKEN_SEMICOLON, "Expected \";\" after statement."); }
-static inline void begin_scope() { compiler->current_depth++; }
+static inline void begin_scope() { compiler->cur_scope_depth++; }
 static void end_scope() { 
-    compiler->current_depth--;
-    /*
-        while ( current->localCount > 0 && 
-                current->locals[current->localCount - 1].depth > current->scopeDepth) {
-            emitByte(OP_POP);
-            current->localCount--;
-        }
-    */
-
-    int destroy_local_count = 0;
-    while (  compiler->locals_count > 0 &&
-            compiler->locals[compiler->locals_count - 1].depth > compiler->current_depth) 
-    {
-        destroy_local_count++;
+    int scope_local_count = 0;
+    while (compiler->locals_count > 0 && compiler->locals[compiler->locals_count - 1].depth == compiler->cur_scope_depth) {
+        scope_local_count++;
         compiler->locals_count--;
     }
+    compiler->cur_scope_depth--;
 
-
-    // clang-format off
-    switch (destroy_local_count) {
-        case 0:     return; // do nothing if no locals are present
-        case 1:     emit_byte(OP_POP); break; // use optimized OP_POP if only one local is present
-        default:    emit_bytes(OP_POPN, (byte_t)destroy_local_count); break;
+    switch(scope_local_count) {
+        case 0: break;  // do nothing
+        case 1: emit_byte(OP_POP); break;
+        default: emit_bytes(OP_POPN, (byte_t)scope_local_count); break;
     }
-    // clang-format on
-}
-
-// adds the local the locals array inside compiler
-static void add_local(Token name) {
-    if (compiler->locals_count > MAX_BYTE_COUNT) {
-        error_token(&parser.previous, "Too many locals in one block.");
-        return;
-    }
-    
-
-    // get the top empty slot
-    Local* local = &compiler->locals[compiler->locals_count++];
-    local->name = name;
-    // local->depth = compiler->current_depth;
-    local->depth = -1;
-}
-static void declare_local() {
-    // skip any global variables
-    if (compiler->current_depth == 0)
-        return;
-
-    Token name = parser.previous;
-    for (int i = compiler->locals_count - 1; i >= 0; i--) {
-        Local* local = compiler->locals + i;
-        if (local->depth != -1 && local->depth < compiler->current_depth) {
-            break;
-        }
-
-        if (identifiers_equal(&name, &local->name)) {
-            error_token(&name, "Already a variable with same name in the current scope.");
-        }
-    }
-    add_local(name);
-}
-
-// returns the locations of constant that points to the string of variable name
-static byte_t parse_variable(const char* error_msg)
-{
-    consume(TOKEN_IDENTIFIER, error_msg);
-    declare_local();
-    if (compiler->current_depth > 0)
-        return 0;
-    return store_identifier_constant(&parser.previous);
 }
 
 static inline void mark_initialized() {
-    compiler->locals[compiler->locals_count - 1].depth = compiler->current_depth;
+    compiler->locals[compiler->locals_count - 1].depth = compiler->cur_scope_depth;
+}
+
+// stores the local name in locals array
+static void declare_local(Token name) {
+
+    if (compiler->cur_scope_depth == 0)
+        return;
+
+    if (compiler->locals_count > MAX_BYTE_COUNT) {
+        error_token(&name, "Too many locals in a scope.");
+        return;
+    }
+
+    for (int i = compiler->locals_count - 1; i >= 0; i--) {
+        Local* local = compiler->locals + i;
+        if (compiler->cur_scope_depth != local->depth) {
+            break;
+        }
+        if (identifiers_equal(&name, &local->name)) {
+            error_token(&name, "Variable with the same name already exists in the given scope.");
+            return;
+        }
+    }
+
+    Local* local = &compiler->locals[compiler->locals_count++];
+    local->name = name;
+    local->depth = -1; // keep it uninitialized
+}
+
+static void cmpl_var_decl() {
+
+    // if local on 'var' keyword:
+    // get the name
+    // add the name to the locals array
+    // compile the expression
+
+    byte_t varloc = parse_variable("Expected variable name after 'var' keyword.");
+
+    declare_local(parser.previous);
+
+    if (match(TOKEN_EQUAL))
+        cmpl_expression();
+    else
+        emit_byte(OP_NIL);
+
+    consume(TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
+
+    if (compiler->cur_scope_depth > 0) {
+        mark_initialized();
+        return;
+    }
+
+    emit_bytes(OP_DEFINE_GLOBAL, varloc);
 }
 
 static inline void cmpl_print_stmt()
@@ -479,29 +501,6 @@ static void cmpl_statement()
     }
 }
 
-static void cmpl_var_decl()
-{
-    // "global variable location"
-    byte_t glb_var_loc = parse_variable("Expected variable name.");
-    
-    if (match(TOKEN_EQUAL))
-        cmpl_expression();
-    else
-        emit_byte(OP_NIL);
-
-    
-    consume_semicolon();
-
-    ///// defineVariable(byte_t glb_var_loc)
-
-    // store any global in globals hash table
-    if (compiler->current_depth > 0) {
-        mark_initialized();
-        return;
-    }
-    emit_bytes(OP_DEFINE_GLOBAL, glb_var_loc);
-}
-
 static void cmpl_declaration()
 {
     if (match(TOKEN_VAR)) {
@@ -558,6 +557,8 @@ ParseRule rules[] = {
 };
 // clang-format on
 
+/* Misc helpers */
+#if 1
 
 static ParseRule* get_rule(TokenType token_type) {
     return &rules[token_type];
@@ -612,6 +613,10 @@ static void syncronize()
         advance();
     }
 }
+#endif
+
+/* Code drivers */
+#if 1
 
 bool compile(const char* source, Chunk* result_cnk) {
     scanner_init(source);
@@ -625,7 +630,6 @@ bool compile(const char* source, Chunk* result_cnk) {
     parser.panic_mode = false;
 
     advance();
-    // cmpl_expression();
 
     while (!match(TOKEN_EOF)) {
         cmpl_declaration();
@@ -642,3 +646,5 @@ bool compile(const char* source, Chunk* result_cnk) {
 
     return !parser.had_error;
 }
+
+#endif
