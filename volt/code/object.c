@@ -27,7 +27,7 @@ static void print_func(ObjFunction* func) {
         printf("<main>");
         return;
     }
-    printf("%s", func->name->chars);
+    printf("<fn %s>", func->name->chars);
 }
 
 

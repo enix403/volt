@@ -97,6 +97,8 @@ int disassemble_instruction(Chunk* cnk, int offset)
         case OP_JUMP:           return jump_instruction("OP_JUMP", 1, offset, cnk);
         case OP_LOOP:           return jump_instruction("OP_LOOP", -1, offset, cnk);
 
+        case OP_CALL:   return byte_instruction("OP_CALL", offset, cnk);
+
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;

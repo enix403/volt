@@ -56,13 +56,15 @@ typedef enum {
     FTYPE_SCRIPT
 } FunctionType;
 
-typedef struct {
+typedef struct Compiler {
     ObjFunction* function;
     FunctionType ftype;
 
     Local locals[MAX_BYTE_COUNT];
     int locals_count;
     int scope_depth; // the current scope depth
+
+    struct Compiler* parent;
 } Compiler;
 
 Parser parser;
@@ -70,6 +72,7 @@ Compiler* cur_compiler = NULL;
 static inline Chunk* current_chunk() { return &cur_compiler->function->chunk; }
 
 static void init_compiler(Compiler* compiler, FunctionType func_type) {
+    compiler->parent = cur_compiler;
     compiler->function = NULL; // free the old function for garbage collection
 
     compiler->locals_count = 0;
@@ -78,6 +81,10 @@ static void init_compiler(Compiler* compiler, FunctionType func_type) {
     compiler->function = new_function();
 
     cur_compiler = compiler;
+
+    if (func_type != FTYPE_SCRIPT) {
+        cur_compiler->function->name = copy_string(parser.previous.start, parser.previous.length);
+    }
 
     Local* local = &cur_compiler->locals[cur_compiler->locals_count++];
     local->name.length = 0;
@@ -265,21 +272,18 @@ static void cmpl_literal(bool can_assign) {
         default: break; // Unreachable
     }
 }
-
 static void cmpl_string(bool can_assign) {
     emit_const(MK_VAL_OBJ(copy_string( // skip the start and end quotes
         parser.previous.start + 1, 
         parser.previous.length - 2
     )));
 }
-
 static void cmpl_lgc_and(bool can_assign) {
     int jump = emit_jump(OP_JUMP_IF_FALSE);
     emit_byte(OP_POP);
     parse_precedence(PREC_AND);
     patch_jump(jump);
 }
-
 static void cmpl_lgc_or(bool can_assign) {
     int jump = emit_jump(OP_JUMP_IF_TRUE);
     emit_byte(OP_POP);
@@ -359,12 +363,39 @@ static void cmpl_variable(bool can_assign) {
 }
 
 
+// ========= FUNCTION CALLS===============
+
+static unsigned int call_arg_list() {
+    unsigned int arg_count = 0;
+    if (!check_token(TOKEN_RIGHT_PAREN)) {
+        do {
+            cmpl_expression();
+            arg_count++;
+
+            if (arg_count > 255) {
+                error_token(&parser.current, "Cannot have more than 255 arguments.");
+            }
+
+        } while (match(TOKEN_COMMA));
+    }
+    consume(TOKEN_RIGHT_PAREN, "Expected ')' after argument list.");
+    return arg_count;
+}
+
+static void cmpl_call(bool _ca) {
+    unsigned int arg_count = call_arg_list();
+    emit_bytes(OP_CALL, (byte_t)arg_count);
+}
+
 #endif
 
 #if 1 /* ==========STATEMENTS============= */
 // forward declare because they refer each other
 static void cmpl_statement();
 static void cmpl_declaration();
+static void cmpl_block();
+static ObjFunction* end_compiler();
+
 
 static inline void begin_scope() { cur_compiler->scope_depth++; }
 static void end_scope() { 
@@ -383,11 +414,12 @@ static void end_scope() {
 }
 
 static inline void mark_initialized() {
+    if (cur_compiler->scope_depth == 0) return;
     cur_compiler->locals[cur_compiler->locals_count - 1].depth = cur_compiler->scope_depth;
 }
 
 // stores the local name in locals array
-static void declare_local(Token name) {
+static void declare_if_local(Token name) {
 
     if (cur_compiler->scope_depth == 0)
         return;
@@ -422,7 +454,7 @@ static void cmpl_var_decl() {
 
     byte_t varloc = parse_variable("Expected variable name after 'var' keyword.");
 
-    declare_local(parser.previous);
+    declare_if_local(parser.previous);
 
     if (match(TOKEN_EQUAL))
         cmpl_expression();
@@ -438,6 +470,68 @@ static void cmpl_var_decl() {
 
     emit_bytes(OP_DEFINE_GLOBAL, varloc);
 }
+
+
+static inline void emit_return() {
+    emit_byte(OP_NIL);
+    emit_byte(OP_RETURN);
+}
+
+static void cmpl_fun_decl() {
+    byte_t funcname_loc = parse_variable("Expected function name after 'fun' keyword.");
+    declare_if_local(parser.previous);
+    mark_initialized();
+    
+    // START FUNCTION
+    Compiler compiler;
+    init_compiler(&compiler, FTYPE_FUNC);
+    begin_scope();
+
+    consume(TOKEN_LEFT_PAREN, "Expected '(' before arguments list.");
+
+    if (!check_token(TOKEN_RIGHT_PAREN)) { // if there is atleast one argument
+        do {
+            int arity = ++cur_compiler->function->arity;
+            if (arity > 255) {
+                error_token(&parser.current, "Cannot have more that 255 parameters.");
+                break;
+            }
+
+            parse_variable("Expected parameter name.");
+            declare_if_local(parser.previous);
+            mark_initialized();
+            
+        } while(match(TOKEN_COMMA));
+    }
+    consume(TOKEN_RIGHT_PAREN, "Expected ')' after arguments list.");
+
+    consume(TOKEN_LEFT_BRACE, "Expected '{' before function body.");
+    cmpl_block();
+
+    ObjFunction* func = end_compiler();
+    emit_bytes(OP_LOADCONST, (byte_t)store_constant(MK_VAL_OBJ(func)));
+    // END FUNCTION
+
+    if (cur_compiler->scope_depth == 0) {
+        emit_bytes(OP_DEFINE_GLOBAL, funcname_loc);
+    }
+}
+
+static void cmpl_return_stmt() {
+
+    if (cur_compiler->ftype == FTYPE_SCRIPT) {
+        error_token(&parser.previous, "Cannot return from top-level code.");
+    }
+
+    if (match(TOKEN_SEMICOLON)) {
+        emit_return();
+        return;
+    }
+    cmpl_expression();
+    emit_byte(OP_RETURN);
+    consume(TOKEN_SEMICOLON, "Expected ';' after return statement");
+}
+
 
 static inline void cmpl_print_stmt()
 {
@@ -510,6 +604,12 @@ static void cmpl_statement()
         cmpl_block();
         end_scope();
     }
+    else if (match(TOKEN_FUN)) {
+        cmpl_fun_decl();
+    }
+    else if (match(TOKEN_RETURN)) {
+        cmpl_return_stmt();
+    }
     else {
         // expression statement
         cmpl_expression();
@@ -531,7 +631,7 @@ static void cmpl_declaration()
 /* Precedence and rule table */
 // clang-format off
 ParseRule rules[] = {
-    [TOKEN_LEFT_PAREN]      = {cmpl_grouping,   NULL,           PREC_NONE},
+    [TOKEN_LEFT_PAREN]      = {cmpl_grouping,   cmpl_call,      PREC_CALL},
     [TOKEN_RIGHT_PAREN]     = {NULL,            NULL,           PREC_NONE},
     [TOKEN_LEFT_BRACE]      = {NULL,            NULL,           PREC_NONE},
     [TOKEN_RIGHT_BRACE]     = {NULL,            NULL,           PREC_NONE},
@@ -635,9 +735,6 @@ static void syncronize()
 /* Code drivers */
 #if 1
 
-static inline void emit_return() {
-    emit_byte(OP_RETURN);
-}
 
 static ObjFunction* end_compiler() {
     emit_return();
@@ -649,6 +746,8 @@ static ObjFunction* end_compiler() {
         disassemble_chunk(&func->chunk, func->name == NULL ? "<script>" : func->name->chars);
     }
 #endif
+
+    cur_compiler = cur_compiler->parent;
 
     return func;
 }

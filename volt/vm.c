@@ -88,6 +88,36 @@ static void concatenate(ObjString* a, ObjString* b)
     pushstack(MK_VAL_OBJ(string_obj));
 }
 
+static bool call_fn(ObjFunction* func, int arg_count) {
+    if (func->arity != arg_count) {
+        runtime_error("Expected %d arguments, got %d", func->arity, arg_count);
+        return false;
+    }
+
+    if (vm.frame_count == FRAMES_MAX) {
+        runtime_error("Call stack overflow");
+        return false;
+    }
+
+    CallFrame* frame = &vm.frames[vm.frame_count++];
+    frame->func = func;
+    frame->pc = func->chunk.code;
+    frame->stack_slots = vm.stack_top - arg_count - 1;
+    return true;
+}
+
+static bool call_value(Value val, int arg_count) {
+    switch(OBJ_TYPE(val)) {
+        case OBJ_FUNCTION:
+            return call_fn(OBJ_AS_FUNC(val), arg_count);
+
+        default:
+            break;
+    }
+
+    runtime_error("Can only call functions and classes");
+    return false;
+}
 
 /* Actual implementation of each opcode */ 
 static InterpretResult run_machine() 
@@ -132,7 +162,22 @@ static InterpretResult run_machine()
         instruction = READ_BYTE();
 
         switch (instruction) {
-            case OP_RETURN:     printf("[Stack count = %d]\n", (int)(vm.stack_top - vm.stack)); return INTERPRET_OK;
+            case OP_RETURN: {
+                // popstack_discard(1);
+                Value return_val = popstack();
+                vm.frame_count--;
+
+                if (vm.frame_count == 0) {
+                    popstack_discard(1);
+                    return INTERPRET_OK; 
+                }
+
+                vm.stack_top = frame->stack_slots;
+                pushstack(return_val);
+
+                frame = &vm.frames[vm.frame_count - 1];
+                break;
+            }
             case OP_LOADCONST:  pushstack(READ_CONST()); break;
 
             case OP_POP:    popstack(); break;
@@ -275,7 +320,17 @@ static InterpretResult run_machine()
                 break;
             }
 
+            case OP_CALL: {
+                byte_t arg_count = READ_BYTE();
 
+                // fn arg_1 arg_2 [stack_top]
+                if (!call_value(peekstack(arg_count), arg_count)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                frame = &vm.frames[vm.frame_count - 1];
+                break;
+            }
 
             default:
                 break;
@@ -293,12 +348,13 @@ InterpretResult vm_execsource(const char* source) {
     ObjFunction* func = compile(source);
     if (func == NULL) return INTERPRET_COMPILE_ERROR;
 
-    CallFrame* frame = &vm.frames[vm.frame_count++];
-    frame->func = func;
-    frame->pc = func->chunk.code;
-    frame->stack_slots = vm.stack_top;
+    // CallFrame* frame = &vm.frames[vm.frame_count++];
+    // frame->func = func;
+    // frame->pc = func->chunk.code;
+    // frame->stack_slots = vm.stack_top;
 
     pushstack(MK_VAL_OBJ(func));
+    call_fn(func, 0);
 
     return run_machine();
 }
