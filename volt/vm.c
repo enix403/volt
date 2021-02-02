@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <time.h>
 
 #include "code/opcodes.h"
 #include "mem.h"
@@ -18,18 +19,6 @@ typedef uint16_t short_t;
 static inline void reset_stack() {
     vm.stack_top = vm.stack;
     vm.frame_count = 0;
-}
-void vm_init() { 
-    reset_stack();
-    vm.objects = NULL;
-    hashtable_init(&vm.interned_strings);
-    hashtable_init(&vm.globals);
-}
-void vm_free() {
-    free_objects(vm.objects);
-    vm_init();
-    hashtable_free(&vm.interned_strings);
-    hashtable_free(&vm.globals);
 }
 
 static inline void pushstack(Value val) {
@@ -50,6 +39,36 @@ static inline Value peekstack(int distance) {
 static inline void popstack_discard(int num) {
     vm.stack_top -= num;
 }
+
+// this function assumes that the stack is completely empty
+static void define_native(const char* name, NativeFn fn) {
+    pushstack(MK_VAL_OBJ(copy_string(name, (int)strlen(name))));
+    pushstack(MK_VAL_OBJ(new_native(fn)));
+    hashtable_set(&vm.globals, OBJ_AS_STRING(vm.stack[0]), vm.stack[1]);
+    popstack_discard(2);
+    // ObjNativeFn* fn_obj = new_native(fn);
+    // hashtable_set(&vm.globals, copy_string( name, (int)strlen(name)), MK_VAL_OBJ(fn_obj));
+}
+
+static Value clock_native(int argc, Value* args) {
+    return MK_VAL_NUM((double)clock() / CLOCKS_PER_SEC);
+}
+
+void vm_init() { 
+    reset_stack();
+    vm.objects = NULL;
+    hashtable_init(&vm.interned_strings);
+    hashtable_init(&vm.globals);
+
+    define_native("clock", clock_native);
+}
+void vm_free() {
+    free_objects(vm.objects);
+    vm_init();
+    hashtable_free(&vm.interned_strings);
+    hashtable_free(&vm.globals);
+}
+
 
 /* Error handling */
 static void runtime_error(const char* format, ...) {
@@ -111,6 +130,14 @@ static bool call_value(Value val, int arg_count) {
         case OBJ_FUNCTION:
             return call_fn(OBJ_AS_FUNC(val), arg_count);
 
+        case OBJ_NATIVEFN: {
+            ObjNativeFn* native_obj = OBJ_AS_NATIVEFN(val);
+            Value res = native_obj->fn(arg_count, vm.stack_top - arg_count);
+            vm.stack_top -= arg_count + 1;
+            pushstack(res);
+            return true;
+        }
+
         default:
             break;
     }
@@ -143,8 +170,8 @@ static InterpretResult run_machine()
 
     /// END BINARY_OPERATION()
 
-
     byte_t instruction;
+
     for(;;) {
 
 #ifdef DEBUG_TRACE_EXECUTION

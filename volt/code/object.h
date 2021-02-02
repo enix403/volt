@@ -8,7 +8,8 @@
 /* General Obj stuff */
 typedef enum {
     OBJ_STRING,
-    OBJ_FUNCTION
+    OBJ_FUNCTION,
+    OBJ_NATIVEFN
 } ObjType;
 
 struct Obj {
@@ -42,7 +43,7 @@ ObjString* take_string(char* chars, int length);
 #define AS_CSTRING(val)  (((ObjString*)VAL_AS_OBJ(val))->chars)
 
 
-/* +======+ FUNCTIONS +======+ */
+/* +======+ USER FUNCTIONS +======+ */
 typedef struct {
     Obj obj;
     unsigned int arity;
@@ -54,3 +55,19 @@ typedef struct {
 #define OBJ_AS_FUNC(val) ((ObjFunction*)VAL_AS_OBJ(val))
 
 ObjFunction* new_function();
+
+
+/* +======+ NATIVE FUNCTIONS +======+ */
+
+typedef Value (*NativeFn)(int argc, Value* args);
+
+typedef struct {
+    Obj obj;
+    NativeFn fn;
+} ObjNativeFn;
+
+#define IS_OBJ_NATIVEFN(val) is_obj_type(val, OBJ_NATIVEFN)
+#define OBJ_AS_NATIVEFN(val) ((ObjNativeFn*)VAL_AS_OBJ(val))
+
+// wraps a NativeFn in ObjNativeFn*
+ObjNativeFn* new_native(NativeFn fn);
