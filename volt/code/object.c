@@ -6,6 +6,8 @@
 #include "vm.h"
 #include "hash_table.h"
 
+/* +======+ STRINGS +======+ */
+
 
 // Fowler–Noll–Vo hash function
 // https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
@@ -20,12 +22,25 @@ static strhash_t hash_string(const char* key, int length) {
     return hash;
 }
 
+static void print_func(ObjFunction* func) {
+    if (func->name == NULL) {
+        printf("<main>");
+        return;
+    }
+    printf("%s", func->name->chars);
+}
+
 
 void print_obj(Value val) {
     switch (OBJ_TYPE(val)) {
         case OBJ_STRING:
             printf("%s", AS_CSTRING(val));
             break;
+
+        case OBJ_FUNCTION:
+            print_func(OBJ_AS_FUNC(val));
+            break;
+        
         default: break; // Unreachable
     }
 }
@@ -87,3 +102,12 @@ ObjString* take_string(char* chars, int length) {
 }
 
 
+/* +======+ FUNCTIONS +======+ */
+
+ObjFunction* new_function() {
+    ObjFunction* func = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
+    func->arity = 0;
+    func->name = NULL;
+    chunk_init(&func->chunk);
+    return func;
+}

@@ -7,7 +7,6 @@
 #include "scanning/scanner.h"
 #include "code/opcodes.h"
 #include "code/value.h"
-#include "code/object.h"
 #include "bool.h"
 
 #include "debugging/switches.h"
@@ -51,21 +50,39 @@ typedef struct {
     int depth;
 } Local;
 
+
+typedef enum {
+    FTYPE_FUNC,
+    FTYPE_SCRIPT
+} FunctionType;
+
 typedef struct {
+    ObjFunction* function;
+    FunctionType ftype;
+
     Local locals[MAX_BYTE_COUNT];
     int locals_count;
-    int cur_scope_depth; // the current scope depth
+    int scope_depth; // the current scope depth
 } Compiler;
 
 Parser parser;
-Chunk* _compiling_chunk;
-static inline Chunk* current_chunk() { return _compiling_chunk; }
-Compiler* compiler = NULL;
+Compiler* cur_compiler = NULL;
+static inline Chunk* current_chunk() { return &cur_compiler->function->chunk; }
 
-static void init_compiler(Compiler* _compiler) {
-    compiler = _compiler;
+static void init_compiler(Compiler* compiler, FunctionType func_type) {
+    compiler->function = NULL; // free the old function for garbage collection
+
     compiler->locals_count = 0;
-    compiler->cur_scope_depth = 0;
+    compiler->scope_depth = 0;
+    compiler->ftype = func_type;
+    compiler->function = new_function();
+
+    cur_compiler = compiler;
+
+    Local* local = &cur_compiler->locals[cur_compiler->locals_count++];
+    local->name.length = 0;
+    local->name.start = "";
+    local->depth = 0;
 }
 
 /* Error handling */
@@ -279,7 +296,7 @@ static inline int identifier_constant(Token* name) {
 // reads the next variable identifier, stores it in constants table, and returns it location 
 static inline byte_t parse_variable(const char* msg) {
     consume(TOKEN_IDENTIFIER, msg);
-    if (compiler->cur_scope_depth > 0) return 0;
+    if (cur_compiler->scope_depth > 0) return 0;
     return (byte_t) identifier_constant(&parser.previous);
 }
 
@@ -293,8 +310,8 @@ static inline bool identifiers_equal(Token* a, Token* b) {
 
 
 static int resolve_local(Token* name) {
-    for (int i = compiler->locals_count - 1; i >= 0; i--) {
-        Local* local = compiler->locals + i;
+    for (int i = cur_compiler->locals_count - 1; i >= 0; i--) {
+        Local* local = cur_compiler->locals + i;
         if (identifiers_equal(name, &local->name)) {
 
             if (local->depth == -1) {
@@ -349,14 +366,14 @@ static void cmpl_variable(bool can_assign) {
 static void cmpl_statement();
 static void cmpl_declaration();
 
-static inline void begin_scope() { compiler->cur_scope_depth++; }
+static inline void begin_scope() { cur_compiler->scope_depth++; }
 static void end_scope() { 
     int scope_local_count = 0;
-    while (compiler->locals_count > 0 && compiler->locals[compiler->locals_count - 1].depth == compiler->cur_scope_depth) {
+    while (cur_compiler->locals_count > 0 && cur_compiler->locals[cur_compiler->locals_count - 1].depth == cur_compiler->scope_depth) {
         scope_local_count++;
-        compiler->locals_count--;
+        cur_compiler->locals_count--;
     }
-    compiler->cur_scope_depth--;
+    cur_compiler->scope_depth--;
 
     switch(scope_local_count) {
         case 0: break;  // do nothing
@@ -366,23 +383,23 @@ static void end_scope() {
 }
 
 static inline void mark_initialized() {
-    compiler->locals[compiler->locals_count - 1].depth = compiler->cur_scope_depth;
+    cur_compiler->locals[cur_compiler->locals_count - 1].depth = cur_compiler->scope_depth;
 }
 
 // stores the local name in locals array
 static void declare_local(Token name) {
 
-    if (compiler->cur_scope_depth == 0)
+    if (cur_compiler->scope_depth == 0)
         return;
 
-    if (compiler->locals_count > MAX_BYTE_COUNT) {
+    if (cur_compiler->locals_count > MAX_BYTE_COUNT) {
         error_token(&name, "Too many locals in a scope.");
         return;
     }
 
-    for (int i = compiler->locals_count - 1; i >= 0; i--) {
-        Local* local = compiler->locals + i;
-        if (compiler->cur_scope_depth != local->depth) {
+    for (int i = cur_compiler->locals_count - 1; i >= 0; i--) {
+        Local* local = cur_compiler->locals + i;
+        if (cur_compiler->scope_depth != local->depth) {
             break;
         }
         if (identifiers_equal(&name, &local->name)) {
@@ -391,7 +408,7 @@ static void declare_local(Token name) {
         }
     }
 
-    Local* local = &compiler->locals[compiler->locals_count++];
+    Local* local = &cur_compiler->locals[cur_compiler->locals_count++];
     local->name = name;
     local->depth = -1; // keep it uninitialized
 }
@@ -414,7 +431,7 @@ static void cmpl_var_decl() {
 
     consume(TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
 
-    if (compiler->cur_scope_depth > 0) {
+    if (cur_compiler->scope_depth > 0) {
         mark_initialized();
         return;
     }
@@ -618,13 +635,29 @@ static void syncronize()
 /* Code drivers */
 #if 1
 
-bool compile(const char* source, Chunk* result_cnk) {
+static inline void emit_return() {
+    emit_byte(OP_RETURN);
+}
+
+static ObjFunction* end_compiler() {
+    emit_return();
+
+    ObjFunction* func = cur_compiler->function;
+
+#ifdef DEBUG_SHOW_COMPILED_CODE
+    if (!parser.had_error) {
+        disassemble_chunk(&func->chunk, func->name == NULL ? "<script>" : func->name->chars);
+    }
+#endif
+
+    return func;
+}
+
+ObjFunction* compile(const char* source) {
     scanner_init(source);
 
     Compiler compiler;
-    init_compiler(&compiler);
-
-    _compiling_chunk = result_cnk;
+    init_compiler(&compiler, FTYPE_SCRIPT);
     
     parser.had_error = false;
     parser.panic_mode = false;
@@ -635,16 +668,8 @@ bool compile(const char* source, Chunk* result_cnk) {
         cmpl_declaration();
     }
 
-    emit_byte(OP_RETURN);
-
-    _compiling_chunk = NULL;
-#ifdef DEBUG_SHOW_COMPILED_CODE
-    if (!parser.had_error) {
-        disassemble_chunk(result_cnk, "COMPILED CODE");
-    }
-#endif
-
-    return !parser.had_error;
+    ObjFunction* func = end_compiler();
+    return parser.had_error ? NULL : func;
 }
 
 #endif

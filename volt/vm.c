@@ -7,6 +7,7 @@
 #include "code/opcodes.h"
 #include "mem.h"
 #include "compiling/compiler.h"
+#include "debugging/switches.h"
 #include "debugging/disassembly.h"
 
 VM vm;
@@ -16,6 +17,7 @@ typedef uint16_t short_t;
 /* Stack handling and vm initializtion */
 static inline void reset_stack() {
     vm.stack_top = vm.stack;
+    vm.frame_count = 0;
 }
 void vm_init() { 
     reset_stack();
@@ -57,7 +59,9 @@ static void runtime_error(const char* format, ...) {
     va_end(args);
     fputs("\n", stderr);
 
-    size_t instruction = vm.prog_counter - vm.cnk->code - 1;
+    // size_t instruction = vm.prog_counter - vm.cnk->code - 1;
+    CallFrame* frame = &vm.frames[vm.frame_count - 1];
+    size_t instruction = frame->pc - frame->func->chunk.code - 1;
     // int line = vm.cnk->lines[instruction];
     // TODO: Get the real line of instruction
     int line = 888;
@@ -83,11 +87,19 @@ static void concatenate(ObjString* a, ObjString* b)
     ObjString* string_obj = take_string(new_string, length);
     pushstack(MK_VAL_OBJ(string_obj));
 }
+
+
 /* Actual implementation of each opcode */ 
-#define READ_BYTE() (*vm.prog_counter++)
+static InterpretResult run_machine() 
+{
+
+    CallFrame* frame = &vm.frames[vm.frame_count - 1];
+
+#define READ_BYTE() (*frame->pc++)
 #define READ_SHORT() \
-    (vm.prog_counter += 2, (uint16_t)(vm.prog_counter[-2] << 8 | vm.prog_counter[-1]))
-#define READ_CONST() (vm.cnk->constants.values[READ_BYTE()])
+    (frame->pc += 2, (short_t)(frame->pc[-2] << 8 | frame->pc[-1]))
+// #define READ_CONST() (vm.cnk->constants.values[READ_BYTE()])
+#define READ_CONST() (frame->func->chunk.constants.values[READ_BYTE()])
 #define READ_STRING() OBJ_AS_STRING(READ_CONST())
 
 #define BINARY_OPERATION(valtype_macro, op)                             \
@@ -102,10 +114,21 @@ static void concatenate(ObjString* a, ObjString* b)
     /// END BINARY_OPERATION()
 
 
-static InterpretResult run_machine() 
-{
     byte_t instruction;
     for(;;) {
+
+#ifdef DEBUG_TRACE_EXECUTION
+        printf("          ");
+        for (Value* slot = vm.stack; slot < vm.stack_top; slot++) {
+            printf("[ ");
+            print_val(*slot);
+            printf(" ]");
+        }
+        printf("\n");
+        disassemble_instruction(&frame->func->chunk, (int)(frame->pc - frame->func->chunk.code));
+
+#endif
+
         instruction = READ_BYTE();
 
         switch (instruction) {
@@ -215,13 +238,13 @@ static InterpretResult run_machine()
 
             case OP_GET_LOCAL: {
                 byte_t slot_index = READ_BYTE();
-                pushstack(vm.stack[slot_index]);
+                pushstack(frame->stack_slots[slot_index]);
                 break;
             }
 
             case OP_SET_LOCAL: {
                 byte_t slot_index = READ_BYTE();
-                vm.stack[slot_index] = peekstack(0); // remember, don't pop because assignment is an expression
+                frame->stack_slots[slot_index] = peekstack(0); // remember, don't pop because assignment is an expression
                 break;
             }
 
@@ -229,26 +252,26 @@ static InterpretResult run_machine()
             case OP_JUMP_IF_FALSE: {
                 short_t offset = READ_SHORT();
                 if (is_falsey(peekstack(0)))
-                    vm.prog_counter += offset;
+                    frame->pc += offset;
                 break;
             }
 
             case OP_JUMP_IF_TRUE: {
                 short_t offset = READ_SHORT();
                 if (!is_falsey(peekstack(0)))
-                    vm.prog_counter += offset;
+                    frame->pc += offset;
                 break;
             }
 
             case OP_JUMP: {
                 short_t offset = READ_SHORT();
-                vm.prog_counter += offset;
+                frame->pc += offset;
                 break;
             }
 
             case OP_LOOP: {
                 short_t offset = READ_SHORT();
-                vm.prog_counter -= offset;
+                frame->pc -= offset;
                 break;
             }
 
@@ -266,30 +289,16 @@ static InterpretResult run_machine()
 #undef READ_STRING
 
 
-/* Runner functions */
-InterpretResult vm_execchunk(Chunk* cnk) {
-    vm.cnk = cnk;
-    vm.prog_counter = cnk->code;
-    return run_machine();
-}
-
 InterpretResult vm_execsource(const char* source) {
-    Chunk cnk;
-    chunk_init(&cnk);
+    ObjFunction* func = compile(source);
+    if (func == NULL) return INTERPRET_COMPILE_ERROR;
 
-    // compile
-    if (!compile(source, &cnk)) {
-        chunk_free(&cnk);
-        return INTERPRET_COMPILE_ERROR;
-    }
+    CallFrame* frame = &vm.frames[vm.frame_count++];
+    frame->func = func;
+    frame->pc = func->chunk.code;
+    frame->stack_slots = vm.stack_top;
 
-    // setup execution
-    vm.cnk = &cnk;
-    vm.prog_counter = cnk.code;
+    pushstack(MK_VAL_OBJ(func));
 
-    // run
-    InterpretResult res = run_machine();
-    // free resources
-    chunk_free(&cnk);
-    return res;
+    return run_machine();
 }

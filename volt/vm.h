@@ -5,11 +5,23 @@
 #include "code/object.h"
 #include "hash_table.h"
 
-#define VM_STACK_MAX 256
+#define FRAMES_MAX 64
+#define VM_STACK_MAX (256 * FRAMES_MAX)
+// #define VM_STACK_MAX 256
+
 
 typedef struct {
-    Chunk* cnk;
-    byte_t* prog_counter;
+    ObjFunction* func;
+    byte_t* pc;
+    Value* stack_slots;
+} CallFrame;
+
+typedef struct {
+    // Chunk* cnk;
+    // byte_t* prog_counter;
+
+    CallFrame frames[FRAMES_MAX];
+    unsigned int frame_count;
 
     // the great stack itself
     Value stack[VM_STACK_MAX];
@@ -41,4 +53,3 @@ void vm_free();
 // Value vm_peekstack();
 
 InterpretResult vm_execsource(const char* source);
-InterpretResult vm_execchunk(Chunk* cnk);

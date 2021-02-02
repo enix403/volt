@@ -1,12 +1,14 @@
 #pragma once
 #include "code/value.h"
+#include "code/chunk.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 /* General Obj stuff */
 typedef enum {
-    OBJ_STRING
+    OBJ_STRING,
+    OBJ_FUNCTION
 } ObjType;
 
 struct Obj {
@@ -18,9 +20,10 @@ struct Obj {
 void print_obj(Value val);
 Obj* allocate_obj(size_t size, ObjType type);
 
+static inline bool is_obj_type(Value val, ObjType type) { return IS_VAL_OBJ(val) && VAL_AS_OBJ(val)->type == type; }
 
 
-/* ObjString specific stuff */
+/* +======+ STRINGS +======+ */
 typedef uint32_t strhash_t;
 
 struct ObjString {
@@ -38,4 +41,16 @@ ObjString* take_string(char* chars, int length);
 #define OBJ_AS_STRING(val)   ((ObjString*)VAL_AS_OBJ(val))
 #define AS_CSTRING(val)  (((ObjString*)VAL_AS_OBJ(val))->chars)
 
-static inline bool is_obj_type(Value val, ObjType type) { return IS_VAL_OBJ(val) && VAL_AS_OBJ(val)->type == type; }
+
+/* +======+ FUNCTIONS +======+ */
+typedef struct {
+    Obj obj;
+    unsigned int arity;
+    Chunk chunk;
+    ObjString* name;
+} ObjFunction;
+
+#define IS_OBJ_FUNC(val) is_obj_type(val, OBJ_FUNCTION)
+#define OBJ_AS_FUNC(val) ((ObjFunction*)VAL_AS_OBJ(val))
+
+ObjFunction* new_function();

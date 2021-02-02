@@ -2,5 +2,6 @@
 
 #include "bool.h"
 #include "code/chunk.h"
+#include "code/object.h"
 
-bool compile(const char* source, Chunk* result_cnk);
+ObjFunction* compile(const char* source);
