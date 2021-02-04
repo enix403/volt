@@ -1,17 +1,17 @@
-#include "compiling/compiler.h"
+#include "volt/compiling/compiler.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "scanning/scanner.h"
-#include "code/opcodes.h"
-#include "code/value.h"
-#include "bool.h"
+#include "volt/scanning/scanner.h"
+#include "volt/code/opcodes.h"
+#include "volt/code/value.h"
+#include "volt/bool.h"
 
-#include "debugging/switches.h"
+#include "volt/debugging/switches.h"
 #ifdef DEBUG_SHOW_COMPILED_CODE
-#include "debugging/disassembly.h"
+#include "volt/debugging/disassembly.h"
 #endif
 
 #define MAX_BYTE_COUNT (UINT8_MAX + 1)

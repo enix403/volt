@@ -1,6 +1,5 @@
 #pragma once
-#include "bool.h"
-
+#include "volt/bool.h"
 
 // forward declarations
 typedef struct Obj Obj;

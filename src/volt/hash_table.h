@@ -1,8 +1,8 @@
 #pragma once
 
-#include "code/value.h"
-#include "code/object.h"
-#include "bool.h"
+#include "volt/code/value.h"
+#include "volt/code/object.h"
+#include "volt/bool.h"
 
 typedef struct {
     ObjString* key;

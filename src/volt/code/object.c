@@ -1,10 +1,10 @@
-#include "code/object.h"
+#include "volt/code/object.h"
 
 #include <stdio.h>
 #include <string.h>
-#include "mem.h"
-#include "vm.h"
-#include "hash_table.h"
+#include "volt/mem.h"
+#include "volt/vm.h"
+#include "volt/hash_table.h"
 
 /* +======+ STRINGS +======+ */
 

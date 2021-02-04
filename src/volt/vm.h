@@ -1,9 +1,9 @@
 #pragma once
 
-#include "code/chunk.h"
-#include "code/value.h"
-#include "code/object.h"
-#include "hash_table.h"
+#include "volt/code/chunk.h"
+#include "volt/code/value.h"
+#include "volt/code/object.h"
+#include "volt/hash_table.h"
 
 #define FRAMES_MAX 64
 #define VM_STACK_MAX (256 * FRAMES_MAX)

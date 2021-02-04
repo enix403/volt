@@ -1,8 +1,8 @@
-#include "mem.h"
+#include "volt/mem.h"
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "code/object.h"
+#include "volt/code/object.h"
 
 // All memory handling must be done here to pass through logging
 void* reallocate(void* buffer, int old_size, int new_size) {

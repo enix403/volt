@@ -1,15 +1,15 @@
-#include "vm.h"
+#include "volt/vm.h"
 
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
 
-#include "code/opcodes.h"
-#include "mem.h"
-#include "compiling/compiler.h"
-#include "debugging/switches.h"
-#include "debugging/disassembly.h"
+#include "volt/code/opcodes.h"
+#include "volt/mem.h"
+#include "volt/compiling/compiler.h"
+#include "volt/debugging/switches.h"
+#include "volt/debugging/disassembly.h"
 
 VM vm;
 typedef uint16_t short_t;

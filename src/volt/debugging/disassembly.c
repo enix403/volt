@@ -1,8 +1,8 @@
-#include "debugging/disassembly.h"
+#include "volt/debugging/disassembly.h"
 
 #include <stdio.h>
-#include "code/opcodes.h"
-#include "code/value.h"
+#include "volt/code/opcodes.h"
+#include "volt/code/value.h"
 
 // pretty prints an instruction that takes no operand
 static int simple_instruction(const char* name, int offset)

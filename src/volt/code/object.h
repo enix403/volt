@@ -1,6 +1,6 @@
 #pragma once
-#include "code/value.h"
-#include "code/chunk.h"
+#include "volt/code/value.h"
+#include "volt/code/chunk.h"
 
 #include <stddef.h>
 #include <stdint.h>

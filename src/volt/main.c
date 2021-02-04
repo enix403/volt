@@ -5,7 +5,7 @@
 // #include "code/chunk.h"
 // #include "code/value.h"
 // #include "code/opcodes.h"
-#include "vm.h"
+#include "volt/vm.h"
 // #include "debugging/disassembly.h"
 // #include "scanning/scanner.h"
 

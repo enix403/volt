@@ -1,6 +1,6 @@
-#include "scanning/scanner.h"
+#include "volt/scanning/scanner.h"
 #include <string.h>
-#include "bool.h"
+#include "volt/bool.h"
 
 typedef struct {
     int line;

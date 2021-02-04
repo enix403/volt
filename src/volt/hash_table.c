@@ -1,6 +1,6 @@
-#include "hash_table.h"
+#include "volt/hash_table.h"
 #include <string.h>
-#include "mem.h"
+#include "volt/mem.h"
 
 // the maximun load factor for a table
 #define HTABLE_MAX_LOAD 0.75
