@@ -54,6 +54,12 @@ static Value clock_native(int argc, Value* args) {
     return MK_VAL_NUM((double)clock() / CLOCKS_PER_SEC);
 }
 
+static Value input_num_native(int argc, Value* args) {
+    long val;
+    scanf("%ld", &val);
+    return MK_VAL_NUM((double)val);
+}
+
 void vm_init() { 
     reset_stack();
     vm.objects = NULL;
@@ -61,6 +67,7 @@ void vm_init() {
     hashtable_init(&vm.globals);
 
     define_native("clock", clock_native);
+    define_native("input_num", input_num_native);
 }
 void vm_free() {
     free_objects(vm.objects);
