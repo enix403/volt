@@ -1,14 +1,12 @@
 
 
-print_stmt -> "print" expression ";" ;
 expr_stmt -> expression ";" ;
 
 block -> "{" declaration* "}";
 
-stmt --> print_stmt
+stmt -->
        | expr_stmt
        | if_stmt
-       | for_stmt
        | while_stmt
        | return_stmt
        | block;
